@@ -16,6 +16,7 @@ function createHarness() {
 	let markdownTransformer: ((markdown: string, context: any) => string) | undefined;
 	let footerFactory: ((tui: any, theme: any, footerData: any) => { render(width: number): string[] }) | undefined;
 	let idle = true;
+	let shutdownCalls = 0;
 
 	const ui = {
 		theme: {
@@ -59,6 +60,9 @@ function createHarness() {
 		ui,
 		getContextUsage: () => undefined,
 		isIdle: () => idle,
+		shutdown: () => {
+			shutdownCalls++;
+		},
 	} as unknown as ExtensionContext;
 	const api = {
 		on(name: string, handler: Handler) {
@@ -85,6 +89,7 @@ function createHarness() {
 		entries,
 		workingMessages,
 		workingVisibility,
+		getShutdownCalls: () => shutdownCalls,
 		renderFooter(width = 120) {
 			if (!footerFactory) return [];
 			return footerFactory(
@@ -110,6 +115,14 @@ function createHarness() {
 }
 
 describe("TUI lifecycle", () => {
+	it("registers /exit as a /quit-equivalent shutdown command", async () => {
+		const harness = createHarness();
+
+		await harness.commands.get("exit")!.handler("", harness.ctx);
+
+		assert.equal(harness.getShutdownCalls(), 1);
+	});
+
 	it("keeps custom run telemetry disabled after switching to the default TUI", async () => {
 		const harness = createHarness();
 		await harness.commands.get("use-default-tui")!.handler("", harness.ctx);

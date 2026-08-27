@@ -45,6 +45,7 @@ pi -e .
 
 ## Commands
 
+- `/exit` — exit Pi; equivalent to `/quit`
 - `/statusline` — toggle and reorder footer fields (`Space`, `←/→`, `Enter`); saves to `~/.pi/agent/claude-code-tui.json`
   - Fields: model, context, directory, cache, cost, session name/ID, transcript path, version, context remaining/window, input/output tokens, duration, and >200k warning
 - `/use-claude-style-tui` — enable the custom TUI

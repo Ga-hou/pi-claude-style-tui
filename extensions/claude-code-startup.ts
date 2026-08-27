@@ -561,6 +561,13 @@ export default function (pi: ExtensionAPI) {
 		previousTheme = undefined;
 	});
 
+	pi.registerCommand("exit", {
+		description: "Exit Pi",
+		handler: async (_args, ctx) => {
+			ctx.shutdown();
+		},
+	});
+
 	pi.registerCommand("statusline", {
 		description: "Configure Claude-style footer items and order",
 		handler: async (_args, ctx) => {
