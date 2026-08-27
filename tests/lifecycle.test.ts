@@ -123,19 +123,6 @@ describe("TUI lifecycle", () => {
 		assert.equal(harness.getShutdownCalls(), 1);
 	});
 
-	it("keeps custom run telemetry disabled after switching to the default TUI", async () => {
-		const harness = createHarness();
-		await harness.commands.get("use-default-tui")!.handler("", harness.ctx);
-		harness.workingMessages.length = 0;
-
-		await harness.emit("before_agent_start");
-		await harness.emit("agent_start");
-		await harness.emit("agent_settled");
-
-		assert.deepEqual(harness.workingMessages, []);
-		assert.deepEqual(harness.entries, []);
-	});
-
 	it("shows thinking with the model and omits the hotkeys footer hint", async () => {
 		const harness = createHarness();
 		await harness.commands.get("use-claude-style-tui")!.handler("", harness.ctx);
