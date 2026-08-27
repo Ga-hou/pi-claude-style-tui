@@ -4,16 +4,23 @@ A Pi package that provides a Claude Code-inspired header, editor, footer, theme,
 
 ## Installation
 
-Install from a GitHub repository:
+Install the package from npm:
 
 ```bash
-pi install git:github.com/<owner>/<repository>
+pi install npm:pi-claude-style-tui@1.0.0
 ```
 
-Or install from a local checkout:
+To try it without adding it to your Pi settings:
 
 ```bash
-pi install /path/to/checkout
+pi -e npm:pi-claude-style-tui@1.0.0
+```
+
+Update or remove the package:
+
+```bash
+pi update npm:pi-claude-style-tui
+pi remove npm:pi-claude-style-tui
 ```
 
 ## Features
@@ -44,12 +51,22 @@ Run directly from the checkout:
 pi -e .
 ```
 
+## Publishing
+
+Validate the package contents and release checks before publishing:
+
+```bash
+npm pack --dry-run
+npm publish --access public
+```
+
+`npm publish` validates formatting, lint, import order, typecheck, and tests through the `prepublishOnly` script.
+
 ## Commands
 
 - `/exit` — exit Pi; equivalent to `/quit`
 - `/statusline` — toggle and reorder footer fields (`Space`, `←/→`, `Enter`); saves to `~/.pi/agent/claude-code-tui.json`
   - Fields: model, context, directory, cache, cost, session name/ID, transcript path, version, context remaining/window, input/output tokens, duration, and >200k warning
-- `/use-claude-style-tui` — reapply the custom TUI
 
 ## License
 

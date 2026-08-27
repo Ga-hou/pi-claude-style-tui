@@ -16,7 +16,11 @@ function createHarness() {
 	const workingMessages: Array<string | undefined> = [];
 	const workingVisibility: boolean[] = [];
 	let markdownTransformer: ((markdown: string, context: any) => string) | undefined;
-	let footerFactory: ((tui: any, theme: any, footerData: any) => { render(width: number): string[] }) | undefined;
+	let selectedTheme: string | undefined;
+	let headerConfigured = false;
+	let footerConfigured = false;
+	let editorConfigured = false;
+	let workingIndicatorConfigured = false;
 	let idle = true;
 	let shutdownCalls = 0;
 
@@ -25,20 +29,27 @@ function createHarness() {
 			fg: (_color: string, text: string) => text,
 			bold: (text: string) => text,
 		},
-		setTheme() {
+		setTheme(theme: string) {
+			selectedTheme = theme;
 			return { success: true };
 		},
 		setTitle() {},
-		setHeader() {},
-		setFooter(factory?: typeof footerFactory) {
-			footerFactory = factory;
+		setHeader() {
+			headerConfigured = true;
 		},
-		setWorkingIndicator() {},
+		setFooter() {
+			footerConfigured = true;
+		},
+		setWorkingIndicator() {
+			workingIndicatorConfigured = true;
+		},
 		setWorkingVisible(visible: boolean) {
 			workingVisibility.push(visible);
 		},
 		setHiddenThinkingLabel() {},
-		setEditorComponent() {},
+		setEditorComponent() {
+			editorConfigured = true;
+		},
 		setWorkingMessage(message?: string) {
 			workingMessages.push(message);
 		},
@@ -85,6 +96,8 @@ function createHarness() {
 		appendEntry(type: string, data: unknown) {
 			entries.push({ type, data });
 		},
+		getAllTools: () => [],
+		registerTool() {},
 		getThinkingLevel: () => "medium",
 	} as unknown as ExtensionAPI;
 
@@ -97,14 +110,13 @@ function createHarness() {
 		workingMessages,
 		workingVisibility,
 		getShutdownCalls: () => shutdownCalls,
-		renderFooter(width = 120) {
-			if (!footerFactory) return [];
-			return footerFactory({ requestRender() {} }, ui.theme, {
-				onBranchChange: () => () => {},
-				getGitBranch: () => "main",
-				getExtensionStatuses: () => new Map(),
-			}).render(width);
-		},
+		getUiState: () => ({
+			selectedTheme,
+			headerConfigured,
+			footerConfigured,
+			editorConfigured,
+			workingIndicatorConfigured,
+		}),
 		transformMarkdown(markdown: string, context: any) {
 			return markdownTransformer?.(markdown, context) ?? markdown;
 		},
@@ -126,17 +138,24 @@ describe("TUI lifecycle", () => {
 		assert.equal(harness.getShutdownCalls(), 1);
 	});
 
-	it("shows thinking with the model and omits the hotkeys footer hint", async () => {
+	it("applies the custom TUI automatically on session start", async () => {
 		const harness = createHarness();
-		await harness.commands.get("use-claude-style-tui")!.handler("", harness.ctx);
-		const footer = harness.renderFooter().join("\n");
-		assert.match(footer, /test-model • medium/);
-		assert.doesNotMatch(footer, /hotkeys|medium mode/);
+
+		await harness.emit("session_start");
+		await new Promise((resolve) => setTimeout(resolve, 1));
+
+		assert.deepEqual(harness.getUiState(), {
+			selectedTheme: "claude-code-dark",
+			headerConfigured: true,
+			footerConfigured: true,
+			editorConfigured: true,
+			workingIndicatorConfigured: true,
+		});
+		await harness.emit("session_shutdown");
 	});
 
-	it("shows the assistant dot only after streaming settles", async () => {
+	it("shows the assistant dot only after streaming settles", () => {
 		const harness = createHarness();
-		await harness.commands.get("use-claude-style-tui")!.handler("", harness.ctx);
 
 		assert.equal(
 			harness.transformMarkdown("hello", {
@@ -156,7 +175,6 @@ describe("TUI lifecycle", () => {
 
 	it("hides working on visible text and restores it for the next turn", async () => {
 		const harness = createHarness();
-		await harness.commands.get("use-claude-style-tui")!.handler("", harness.ctx);
 		await harness.emit("before_agent_start");
 		assert.equal(harness.workingVisibility.at(-1), true);
 		assert.ok(harness.workingMessages.every((message) => !message || !stripAnsi(message).includes("effort")));
@@ -183,7 +201,6 @@ describe("TUI lifecycle", () => {
 
 	it("does not settle a newer run started by another extension", async () => {
 		const harness = createHarness();
-		await harness.commands.get("use-claude-style-tui")!.handler("", harness.ctx);
 		await harness.emit("before_agent_start");
 		assert.ok(harness.workingMessages.length > 0);
 		assert.ok(harness.workingMessages.every((message) => !message?.includes("↑") && !message?.includes("↓")));

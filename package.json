@@ -1,6 +1,6 @@
 {
   "name": "pi-claude-style-tui",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "A Claude Code-inspired TUI for Pi with per-run elapsed time and token telemetry.",
   "type": "module",
   "keywords": [
@@ -32,6 +32,7 @@
     "check:write": "biome check --write .",
     "format": "biome format --write .",
     "lint": "biome lint .",
+    "prepublishOnly": "npm run check && npm run typecheck && npm test",
     "typecheck": "tsc --noEmit",
     "test": "node --experimental-strip-types --test tests/**/*.test.ts"
   },

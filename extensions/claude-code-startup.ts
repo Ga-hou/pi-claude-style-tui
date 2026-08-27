@@ -161,12 +161,4 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.notify(selected.length > 0 ? "Status line updated" : "Status line hidden", "info");
 		},
 	});
-
-	pi.registerCommand("use-claude-style-tui", {
-		description: "Switch to the Claude-style header, editor, footer, and theme",
-		handler: async (_args, ctx) => {
-			applyClaudeLook(pi, ctx);
-			ctx.ui.notify("Using pi-claude-style-tui", "info");
-		},
-	});
 }
