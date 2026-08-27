@@ -1,12 +1,6 @@
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, join } from "node:path";
-import {
-	type ExtensionCommandContext,
-	type ExtensionContext,
-	getAgentDir,
-	VERSION,
-} from "@earendil-works/pi-coding-agent";
+import { type ExtensionCommandContext, type ExtensionContext, VERSION } from "@earendil-works/pi-coding-agent";
 import { type Component, Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
+import { loadClaudeCodeTuiConfig, updateClaudeCodeTuiConfig } from "./claude-config.ts";
 import { formatCwd, formatDuration } from "./render-utils.ts";
 
 export const STATUS_LINE_ITEM_IDS = [
@@ -29,7 +23,6 @@ export const STATUS_LINE_ITEM_IDS = [
 export type StatusLineItemId = (typeof STATUS_LINE_ITEM_IDS)[number];
 export const DEFAULT_STATUS_LINE_ITEMS: StatusLineItemId[] = ["model", "context", "directory", "cache", "cost"];
 
-const CONFIG_PATH = join(getAgentDir(), "claude-code-tui.json");
 const ITEM_DESCRIPTIONS: Record<StatusLineItemId, string> = {
 	model: "Current model name and thinking level",
 	context: "Used context and context-window size",
@@ -82,23 +75,14 @@ export function normalizeStatusLineItems(value: unknown): StatusLineItemId[] {
 }
 
 export async function loadStatusLineItems(): Promise<StatusLineItemId[]> {
-	try {
-		const config = JSON.parse(await readFile(CONFIG_PATH, "utf8")) as {
-			statusLine?: unknown;
-		};
-		if (!Array.isArray(config.statusLine)) {
-			throw new Error(`Invalid statusLine in ${CONFIG_PATH}`);
-		}
-		return normalizeStatusLineItems(config.statusLine);
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code === "ENOENT") return [...DEFAULT_STATUS_LINE_ITEMS];
-		throw error;
-	}
+	const { statusLine } = await loadClaudeCodeTuiConfig();
+	if (statusLine === undefined) return [...DEFAULT_STATUS_LINE_ITEMS];
+	if (!Array.isArray(statusLine)) throw new Error("Invalid statusLine in Claude TUI config");
+	return normalizeStatusLineItems(statusLine);
 }
 
 export async function saveStatusLineItems(items: readonly StatusLineItemId[]): Promise<void> {
-	await mkdir(dirname(CONFIG_PATH), { recursive: true });
-	await writeFile(CONFIG_PATH, `${JSON.stringify({ statusLine: items }, null, 2)}\n`, "utf8");
+	await updateClaudeCodeTuiConfig({ statusLine: items });
 }
 
 function usageFromEntry(entry: unknown): {

@@ -3,6 +3,8 @@ import { describe, it } from "node:test";
 import {
 	addEditorPromptMarker,
 	addUserPromptMarker,
+	advanceAnimatedResponseLength,
+	advanceStalledIntensity,
 	applyStraightEditorBorders,
 	findBottomBorderIndex,
 	formatAnimatedWorkingMessage,
@@ -66,6 +68,23 @@ describe("run metrics formatting", () => {
 		assert.equal(getStreamDeltaLength({ type: "done" }), 0);
 	});
 
+	it("smoothly advances token estimates with Claude's three catch-up speeds", () => {
+		assert.equal(advanceAnimatedResponseLength(0, 69), 3);
+		assert.equal(advanceAnimatedResponseLength(0, 70), 11);
+		assert.equal(advanceAnimatedResponseLength(0, 199), 30);
+		assert.equal(advanceAnimatedResponseLength(0, 200), 50);
+		assert.equal(advanceAnimatedResponseLength(68, 69), 69);
+		assert.equal(advanceAnimatedResponseLength(100, 100), 100);
+		assert.equal(advanceAnimatedResponseLength(100, 90), 100);
+	});
+
+	it("smoothly fades stalled work after three seconds and suppresses it for active tools", () => {
+		assert.equal(advanceStalledIntensity(0, 3_000, false, false), 0);
+		assert.equal(advanceStalledIntensity(0, 5_000, false, true), 1);
+		assert.equal(advanceStalledIntensity(0, 5_000, false, false), 0.1);
+		assert.equal(advanceStalledIntensity(0.5, 5_000, true, false), 0.45);
+	});
+
 	it("matches Claude's delayed active-turn stats", () => {
 		assert.equal(formatTokenCount(999), "999");
 		assert.equal(formatTokenCount(1_250), "1.3k");
@@ -104,6 +123,52 @@ describe("Claude working color animation", () => {
 			["accent", "thinkingXhigh", "accent", "muted"],
 		);
 		assert.equal(calls.map(({ text }) => text).join(""), "Precipitating… (3s)");
+	});
+});
+
+describe("Claude working mode animations", () => {
+	const theme: Parameters<typeof formatAnimatedWorkingMessage>[2] = {
+		fg: (color, text) => `<${color}>${text}</${color}>`,
+	};
+
+	it("moves requesting shimmer left-to-right at 50ms", () => {
+		const calls: Array<{ color: string; text: string }> = [];
+		formatAnimatedWorkingMessage(
+			"Crafting…",
+			550,
+			{
+				fg(color, text) {
+					calls.push({ color, text });
+					return text;
+				},
+			},
+			{ mode: "requesting" },
+		);
+		assert.equal(calls.find(({ color }) => color === "thinkingXhigh")?.text, "Cra");
+	});
+
+	it("uses Claude's full-label pulse and stalled colors", () => {
+		const pulsing = formatAnimatedWorkingMessage("Crafting… (3s)", 500, theme, { mode: "tool-use" });
+		assert.ok(pulsing.includes("\x1b[38;2;235;159;127mCrafting…"));
+		const stalled = formatAnimatedWorkingMessage("Crafting…", 5_000, theme, { stalledIntensity: 1 });
+		assert.ok(stalled.includes("\x1b[38;2;171;43;63mCrafting…"));
+	});
+
+	it("glows thinking text after Claude's three-second delay", () => {
+		const message = formatAnimatedWorkingMessage("Crafting… (thinking with high effort)", 5_000, theme, {
+			mode: "thinking",
+			thinkingElapsedMs: 3_500,
+		});
+		assert.ok(message.includes("\x1b[38;2;185;185;185mthinking with high effort"));
+	});
+
+	it("disables shimmer and uses static colors with reduced motion", () => {
+		const message = formatAnimatedWorkingMessage("Crafting… (thinking with high effort)", 5_000, theme, {
+			mode: "thinking",
+			thinkingElapsedMs: 3_500,
+			reducedMotion: true,
+		});
+		assert.equal(message, "<accent>Crafting…</accent><muted> (thinking with high effort)</muted>");
 	});
 });
 

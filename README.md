@@ -66,6 +66,7 @@ npm publish --access public
 
 - `/exit` — exit Pi; equivalent to `/quit`
 - `/statusline` — toggle and reorder footer fields (`Space`, `←/→`, `Enter`); saves to `~/.pi/agent/claude-code-tui.json`
+- `/reduced-motion [on|off]` — disable shimmer and use a static working indicator; saves to the same config file
   - Fields: model, context, directory, cache, cost, session name/ID, transcript path, version, context remaining/window, input/output tokens, duration, and >200k warning
 
 ## License

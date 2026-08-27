@@ -41,6 +41,30 @@ export function formatTokenCount(tokens: number): string {
 	return `${Math.round(tokens / 1000)}k`;
 }
 
+/** Match Claude's 50ms token counter: small gaps tick, medium gaps ease, large gaps catch up quickly. */
+export function advanceAnimatedResponseLength(displayed: number, target: number): number {
+	const gap = target - displayed;
+	if (gap <= 0) return displayed;
+
+	let increment: number;
+	if (gap < 70) increment = 3;
+	else if (gap < 200) increment = Math.max(8, Math.ceil(gap * 0.15));
+	else increment = 50;
+	return Math.min(displayed + increment, target);
+}
+
+export function advanceStalledIntensity(
+	current: number,
+	timeSinceProgressMs: number,
+	hasActiveTools: boolean,
+	reducedMotion: boolean,
+): number {
+	const target = hasActiveTools ? 0 : Math.min(Math.max(timeSinceProgressMs - 3_000, 0) / 2_000, 1);
+	if (reducedMotion) return target;
+	const difference = target - current;
+	return Math.abs(difference) < 0.01 ? target : current + difference * 0.1;
+}
+
 export const SHOW_TURN_STATS_AFTER_MS = 30_000;
 
 export function getStreamDeltaLength(event: { type: string; delta?: unknown }): number {
@@ -79,27 +103,93 @@ export function formatRunSummary(milliseconds: number, verb = "Worked"): string 
 	return `${verb} for ${formatDuration(milliseconds)}`;
 }
 
-/** Apply Claude's right-to-left, three-character shimmer to the working label. */
-export function formatAnimatedWorkingMessage(message: string, elapsedMs: number, theme: RenderTheme): string {
+export type WorkingAnimationMode = "requesting" | "thinking" | "responding" | "tool-use";
+
+type Rgb = { r: number; g: number; b: number };
+const CLAUDE_RGB: Rgb = { r: 215, g: 119, b: 87 };
+const CLAUDE_SHIMMER_RGB: Rgb = { r: 235, g: 159, b: 127 };
+const CLAUDE_STALLED_RGB: Rgb = { r: 171, g: 43, b: 63 };
+const THINKING_INACTIVE_RGB: Rgb = { r: 153, g: 153, b: 153 };
+const THINKING_SHIMMER_RGB: Rgb = { r: 185, g: 185, b: 185 };
+
+function interpolateRgb(from: Rgb, to: Rgb, progress: number): Rgb {
+	const value = Math.min(1, Math.max(0, progress));
+	return {
+		r: Math.round(from.r + (to.r - from.r) * value),
+		g: Math.round(from.g + (to.g - from.g) * value),
+		b: Math.round(from.b + (to.b - from.b) * value),
+	};
+}
+
+function rgbText(color: Rgb, text: string): string {
+	return `\x1b[38;2;${color.r};${color.g};${color.b}m${text}\x1b[39m`;
+}
+
+function paintWorkingSuffix(
+	suffix: string,
+	theme: RenderTheme,
+	thinkingElapsedMs: number | undefined,
+	reducedMotion: boolean,
+): string {
+	if (thinkingElapsedMs === undefined || reducedMotion) return theme.fg("muted", suffix);
+	const match = /thinking with [^)]+ effort/.exec(suffix);
+	if (!match?.[0]) return theme.fg("muted", suffix);
+
+	const opacity = thinkingElapsedMs < 3_000 ? 0 : (Math.sin(((thinkingElapsedMs - 3_000) / 1_000) * Math.PI) + 1) / 2;
+	const start = match.index;
+	const end = start + match[0].length;
+	return [
+		theme.fg("muted", suffix.slice(0, start)),
+		rgbText(interpolateRgb(THINKING_INACTIVE_RGB, THINKING_SHIMMER_RGB, opacity), match[0]),
+		theme.fg("muted", suffix.slice(end)),
+	].join("");
+}
+
+/** Render Claude's mode-specific glimmer, pulse, stall fade, and thinking glow. */
+export function formatAnimatedWorkingMessage(
+	message: string,
+	elapsedMs: number,
+	theme: RenderTheme,
+	options: {
+		mode?: WorkingAnimationMode;
+		stalledIntensity?: number;
+		thinkingElapsedMs?: number;
+		reducedMotion?: boolean;
+	} = {},
+): string {
 	const labelEnd = message.indexOf("…") + 1;
 	if (labelEnd <= 0) return message;
 
-	const label = Array.from(message.slice(0, labelEnd));
-	const cyclePosition = Math.floor(Math.max(0, elapsedMs) / 200);
-	const glimmerIndex = label.length + 10 - (cyclePosition % (label.length + 20));
-	const shimmerStart = Math.min(label.length, Math.max(0, glimmerIndex - 1));
-	const shimmerEnd = Math.min(label.length, Math.max(0, glimmerIndex + 2));
-
-	const before = label.slice(0, shimmerStart).join("");
-	const shimmer = shimmerStart < shimmerEnd ? label.slice(shimmerStart, shimmerEnd).join("") : "";
-	const after = label.slice(shimmerEnd).join("");
+	const labelText = message.slice(0, labelEnd);
 	const suffix = message.slice(labelEnd);
-	return [
-		theme.fg("accent", before),
-		theme.fg("thinkingXhigh", shimmer),
-		theme.fg("accent", after),
-		theme.fg("muted", suffix),
-	].join("");
+	const mode = options.mode ?? "responding";
+	const stalledIntensity = options.stalledIntensity ?? 0;
+	const reducedMotion = options.reducedMotion ?? false;
+	let paintedLabel: string;
+
+	if (stalledIntensity > 0) {
+		paintedLabel = rgbText(interpolateRgb(CLAUDE_RGB, CLAUDE_STALLED_RGB, stalledIntensity), labelText);
+	} else if (mode === "tool-use" && !reducedMotion) {
+		const opacity = (Math.sin((Math.max(0, elapsedMs) / 1_000) * Math.PI) + 1) / 2;
+		paintedLabel = rgbText(interpolateRgb(CLAUDE_RGB, CLAUDE_SHIMMER_RGB, opacity), labelText);
+	} else if (reducedMotion) {
+		paintedLabel = theme.fg("accent", labelText);
+	} else {
+		const label = Array.from(labelText);
+		const speed = mode === "requesting" ? 50 : 200;
+		const cyclePosition = Math.floor(Math.max(0, elapsedMs) / speed);
+		const cycleOffset = cyclePosition % (label.length + 20);
+		const glimmerIndex = mode === "requesting" ? cycleOffset - 10 : label.length + 10 - cycleOffset;
+		const shimmerStart = Math.min(label.length, Math.max(0, glimmerIndex - 1));
+		const shimmerEnd = Math.min(label.length, Math.max(0, glimmerIndex + 2));
+		paintedLabel = [
+			theme.fg("accent", label.slice(0, shimmerStart).join("")),
+			theme.fg("thinkingXhigh", label.slice(shimmerStart, shimmerEnd).join("")),
+			theme.fg("accent", label.slice(shimmerEnd).join("")),
+		].join("");
+	}
+
+	return `${paintedLabel}${paintWorkingSuffix(suffix, theme, options.thinkingElapsedMs, reducedMotion)}`;
 }
 
 /** Claude's 120ms working glyph sweep, mirrored to animate back to its origin. */

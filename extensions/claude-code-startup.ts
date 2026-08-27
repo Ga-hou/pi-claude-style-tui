@@ -1,5 +1,6 @@
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
+import { loadReducedMotion, saveReducedMotion } from "./claude-config.ts";
 import { applyClaudeEditor } from "./claude-editor.ts";
 import { applyClaudeFooter } from "./claude-footer.ts";
 import { PiStartupHeader } from "./claude-header.ts";
@@ -19,11 +20,23 @@ let previousTheme: ExtensionContext["ui"]["theme"] | undefined;
 let startupTimer: NodeJS.Timeout | undefined;
 let sessionGeneration = 0;
 let statusLineItems: StatusLineItemId[] = [...DEFAULT_STATUS_LINE_ITEMS];
+let reducedMotion = false;
 let paintUserPromptMarker = (text: string): string => text;
 
 function disposeHeader(): void {
 	activeHeader?.dispose();
 	activeHeader = undefined;
+}
+
+function applyWorkingIndicator(ctx: ExtensionContext): void {
+	ctx.ui.setWorkingIndicator(
+		reducedMotion
+			? { frames: [ctx.ui.theme.fg("accent", "●")] }
+			: {
+					frames: getClaudeSpinnerFrames().map((frame) => ctx.ui.theme.fg("accent", frame)),
+					intervalMs: 120,
+				},
+	);
 }
 
 function applyClaudeLook(pi: ExtensionAPI, ctx: ExtensionContext): void {
@@ -39,10 +52,7 @@ function applyClaudeLook(pi: ExtensionAPI, ctx: ExtensionContext): void {
 		return activeHeader;
 	});
 	applyClaudeFooter(pi, ctx, statusLineItems);
-	ctx.ui.setWorkingIndicator({
-		frames: getClaudeSpinnerFrames().map((frame) => ctx.ui.theme.fg("accent", frame)),
-		intervalMs: 120,
-	});
+	applyWorkingIndicator(ctx);
 	ctx.ui.setHiddenThinkingLabel("∴ Thinking…");
 	applyClaudeEditor(pi, ctx);
 }
@@ -91,6 +101,13 @@ export default function (pi: ExtensionAPI) {
 			statusLineItems = [...DEFAULT_STATUS_LINE_ITEMS];
 			ctx.ui.notify(`Could not load status line config: ${(error as Error).message}`, "warning");
 		}
+		try {
+			reducedMotion = await loadReducedMotion();
+		} catch (error) {
+			reducedMotion = false;
+			ctx.ui.notify(`Could not load motion config: ${(error as Error).message}`, "warning");
+		}
+		telemetry.setReducedMotion(reducedMotion);
 		scheduleClaudeLook(pi, ctx);
 	});
 
@@ -111,8 +128,12 @@ export default function (pi: ExtensionAPI) {
 		telemetry.showWorking(ctx, "up");
 	});
 
-	pi.on("tool_execution_start", (_event, ctx) => {
-		telemetry.showWorking(ctx, "down");
+	pi.on("tool_execution_start", (event, ctx) => {
+		telemetry.onToolStart(event.toolCallId, ctx);
+	});
+
+	pi.on("tool_execution_end", (event) => {
+		telemetry.onToolEnd(event.toolCallId);
 	});
 
 	pi.on("message_end", (event) => {
@@ -138,6 +159,31 @@ export default function (pi: ExtensionAPI) {
 		description: "Exit Pi",
 		handler: async (_args, ctx) => {
 			ctx.shutdown();
+		},
+	});
+
+	pi.registerCommand("reduced-motion", {
+		description: "Toggle reduced motion for Claude-style working animations",
+		handler: async (args, ctx) => {
+			const value = args.trim().toLowerCase();
+			if (!value) {
+				ctx.ui.notify(`Reduced motion is ${reducedMotion ? "on" : "off"}`, "info");
+				return;
+			}
+			if (value !== "on" && value !== "off") {
+				ctx.ui.notify("Usage: /reduced-motion [on|off]", "error");
+				return;
+			}
+			reducedMotion = value === "on";
+			try {
+				await saveReducedMotion(reducedMotion);
+			} catch (error) {
+				ctx.ui.notify(`Could not save motion config: ${(error as Error).message}`, "error");
+				return;
+			}
+			telemetry.setReducedMotion(reducedMotion);
+			applyWorkingIndicator(ctx);
+			ctx.ui.notify(`Reduced motion ${reducedMotion ? "enabled" : "disabled"}`, "info");
 		},
 	});
 

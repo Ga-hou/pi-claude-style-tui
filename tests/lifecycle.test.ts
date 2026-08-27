@@ -193,6 +193,9 @@ describe("TUI lifecycle", () => {
 			assistantMessageEvent: { type: "text_delta", delta: "hello" },
 		});
 		assert.equal(harness.workingVisibility.at(-1), false);
+		const hiddenMessageCount = harness.workingMessages.length;
+		await new Promise((resolve) => setTimeout(resolve, 80));
+		assert.equal(harness.workingMessages.length, hiddenMessageCount);
 
 		await harness.emit("turn_start");
 		assert.equal(harness.workingVisibility.at(-1), true);
@@ -210,19 +213,20 @@ describe("TUI lifecycle", () => {
 				message: {
 					role: "assistant",
 					content: [{ type: "text", text: "short" }],
-					usage: { output: 1_250 },
+					usage: { output: 1 },
 				},
 			});
 			now += 30_001;
+			await new Promise((resolve) => setTimeout(resolve, 60));
 
 			await harness.emit("turn_start");
-			assert.ok(stripAnsi(harness.workingMessages.at(-1)!).includes("↑ 1.3k tokens"));
+			assert.ok(stripAnsi(harness.workingMessages.at(-1)!).includes("↑ 1 tokens"));
 
 			await harness.emit("message_update", {
 				message: { role: "assistant" },
-				assistantMessageEvent: { type: "text_delta", delta: "next" },
+				assistantMessageEvent: { type: "toolcall_delta", delta: "next" },
 			});
-			assert.ok(stripAnsi(harness.workingMessages.at(-1)!).includes("↓ 1.3k tokens"));
+			assert.ok(stripAnsi(harness.workingMessages.at(-1)!).includes("↓ 1 tokens"));
 		} finally {
 			Date.now = originalNow;
 			await harness.emit("session_shutdown");
