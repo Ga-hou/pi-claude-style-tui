@@ -108,11 +108,11 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("turn_start", (_event, ctx) => {
-		telemetry.showWorking(ctx);
+		telemetry.showWorking(ctx, "up");
 	});
 
 	pi.on("tool_execution_start", (_event, ctx) => {
-		telemetry.showWorking(ctx);
+		telemetry.showWorking(ctx, "down");
 	});
 
 	pi.on("message_end", (event) => {

@@ -58,12 +58,16 @@ export function formatWorkingMessage(
 	responseLength: number,
 	verbose = false,
 	thinkingLevel?: string,
+	tokenDirection: "up" | "down" = "down",
 ): string {
 	const parts: string[] = [];
 	if (verbose || milliseconds > SHOW_TURN_STATS_AFTER_MS) {
 		parts.push(formatDuration(milliseconds));
 		const outputTokens = Math.round(responseLength / 4);
-		if (outputTokens > 0) parts.push(`↓ ${formatTokenCount(outputTokens)} tokens`);
+		if (outputTokens > 0) {
+			const glyph = tokenDirection === "up" ? "↑" : "↓";
+			parts.push(`${glyph} ${formatTokenCount(outputTokens)} tokens`);
+		}
 	}
 	if (thinkingLevel && thinkingLevel !== "off") {
 		parts.push(`thinking with ${thinkingLevel} effort`);

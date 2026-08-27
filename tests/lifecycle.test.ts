@@ -199,6 +199,36 @@ describe("TUI lifecycle", () => {
 		await harness.emit("session_shutdown");
 	});
 
+	it("uses request direction and actual output usage for later turns", async () => {
+		const harness = createHarness();
+		const originalNow = Date.now;
+		let now = 1_000;
+		Date.now = () => now;
+		try {
+			await harness.emit("before_agent_start");
+			await harness.emit("message_end", {
+				message: {
+					role: "assistant",
+					content: [{ type: "text", text: "short" }],
+					usage: { output: 1_250 },
+				},
+			});
+			now += 30_001;
+
+			await harness.emit("turn_start");
+			assert.ok(stripAnsi(harness.workingMessages.at(-1)!).includes("↑ 1.3k tokens"));
+
+			await harness.emit("message_update", {
+				message: { role: "assistant" },
+				assistantMessageEvent: { type: "text_delta", delta: "next" },
+			});
+			assert.ok(stripAnsi(harness.workingMessages.at(-1)!).includes("↓ 1.3k tokens"));
+		} finally {
+			Date.now = originalNow;
+			await harness.emit("session_shutdown");
+		}
+	});
+
 	it("does not settle a newer run started by another extension", async () => {
 		const harness = createHarness();
 		await harness.emit("before_agent_start");

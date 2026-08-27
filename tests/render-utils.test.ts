@@ -74,6 +74,7 @@ describe("run metrics formatting", () => {
 		assert.equal(formatWorkingMessage("Crafting", 30_001, 0), "Crafting… (30s)");
 		assert.equal(formatWorkingMessage("Crafting", 30_001, 5_000), "Crafting… (30s · ↓ 1.3k tokens)");
 		assert.equal(formatWorkingMessage("Crafting", 999, 40, true), "Crafting… (0s · ↓ 10 tokens)");
+		assert.equal(formatWorkingMessage("Crafting", 999, 40, true, undefined, "up"), "Crafting… (0s · ↑ 10 tokens)");
 		assert.equal(formatWorkingMessage("Crafting", 5_000, 0, false, "xhigh"), "Crafting… (thinking with xhigh effort)");
 		assert.equal(
 			formatWorkingMessage("Crafting", 30_001, 5_000, false, "xhigh"),

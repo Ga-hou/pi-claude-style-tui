@@ -19,6 +19,9 @@ type AssistantStreamEvent = {
 
 type AssistantMessage = {
 	content: unknown;
+	usage?: {
+		output?: number;
+	};
 };
 
 function getResponseLength(message: AssistantMessage): number {
@@ -41,6 +44,7 @@ export class ClaudeRunTelemetry {
 	private completedResponseLength = 0;
 	private streamingResponseLength = 0;
 	private thinkingActive = false;
+	private tokenDirection: "up" | "down" = "up";
 	private workingVerb = "Thinking";
 
 	start(ctx: ExtensionContext, reset: boolean): void {
@@ -57,6 +61,7 @@ export class ClaudeRunTelemetry {
 		this.completedResponseLength = 0;
 		this.streamingResponseLength = 0;
 		this.thinkingActive = false;
+		this.tokenDirection = "up";
 		this.workingVerb = pickWorkingVerb();
 		this.updateWorkingMessage();
 
@@ -85,10 +90,12 @@ export class ClaudeRunTelemetry {
 		this.completedResponseLength = 0;
 		this.streamingResponseLength = 0;
 		this.thinkingActive = false;
+		this.tokenDirection = "up";
 		return metrics;
 	}
 
 	onStream(event: AssistantStreamEvent, ctx: ExtensionContext): void {
+		this.tokenDirection = "down";
 		this.streamingResponseLength += getStreamDeltaLength(event);
 		const delta =
 			(event.type === "thinking_delta" || event.type === "text_delta" || event.type === "toolcall_delta") &&
@@ -108,14 +115,21 @@ export class ClaudeRunTelemetry {
 	}
 
 	onMessageEnd(message: AssistantMessage): void {
-		this.completedResponseLength += Math.max(this.streamingResponseLength, getResponseLength(message));
+		const measuredResponseLength = Math.max(this.streamingResponseLength, getResponseLength(message));
+		const actualOutputTokens = message.usage?.output;
+		this.completedResponseLength +=
+			typeof actualOutputTokens === "number" && actualOutputTokens >= 0
+				? actualOutputTokens * 4
+				: measuredResponseLength;
 		this.streamingResponseLength = 0;
 		this.updateWorkingMessage();
 	}
 
-	showWorking(ctx: ExtensionContext): void {
+	showWorking(ctx: ExtensionContext, tokenDirection: "up" | "down"): void {
 		this.thinkingActive = false;
+		this.tokenDirection = tokenDirection;
 		if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
+		this.updateWorkingMessage();
 	}
 
 	private clearTimer(): void {
@@ -132,6 +146,7 @@ export class ClaudeRunTelemetry {
 			this.completedResponseLength + this.streamingResponseLength,
 			false,
 			this.thinkingActive ? this.context.thinkingLevel : undefined,
+			this.tokenDirection,
 		);
 		this.context.ui.setWorkingMessage(formatAnimatedWorkingMessage(message, elapsedMs, this.context.ui.theme));
 	}
