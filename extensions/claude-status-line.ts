@@ -1,12 +1,12 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import {
-	getAgentDir,
-	VERSION,
 	type ExtensionCommandContext,
 	type ExtensionContext,
+	getAgentDir,
+	VERSION,
 } from "@earendil-works/pi-coding-agent";
-import { Key, matchesKey, truncateToWidth, type Component } from "@earendil-works/pi-tui";
+import { type Component, Key, matchesKey, truncateToWidth } from "@earendil-works/pi-tui";
 import { formatCwd, formatDuration } from "./render-utils.ts";
 
 export const STATUS_LINE_ITEM_IDS = [
@@ -27,13 +27,7 @@ export const STATUS_LINE_ITEM_IDS = [
 	"exceeds-200k",
 ] as const;
 export type StatusLineItemId = (typeof STATUS_LINE_ITEM_IDS)[number];
-export const DEFAULT_STATUS_LINE_ITEMS: StatusLineItemId[] = [
-	"model",
-	"context",
-	"directory",
-	"cache",
-	"cost",
-];
+export const DEFAULT_STATUS_LINE_ITEMS: StatusLineItemId[] = ["model", "context", "directory", "cache", "cost"];
 
 const CONFIG_PATH = join(getAgentDir(), "claude-code-tui.json");
 const ITEM_DESCRIPTIONS: Record<StatusLineItemId, string> = {
@@ -89,7 +83,9 @@ export function normalizeStatusLineItems(value: unknown): StatusLineItemId[] {
 
 export async function loadStatusLineItems(): Promise<StatusLineItemId[]> {
 	try {
-		const config = JSON.parse(await readFile(CONFIG_PATH, "utf8")) as { statusLine?: unknown };
+		const config = JSON.parse(await readFile(CONFIG_PATH, "utf8")) as {
+			statusLine?: unknown;
+		};
 		if (!Array.isArray(config.statusLine)) {
 			throw new Error(`Invalid statusLine in ${CONFIG_PATH}`);
 		}
@@ -105,7 +101,10 @@ export async function saveStatusLineItems(items: readonly StatusLineItemId[]): P
 	await writeFile(CONFIG_PATH, `${JSON.stringify({ statusLine: items }, null, 2)}\n`, "utf8");
 }
 
-function usageFromEntry(entry: unknown): { usage?: Usage; assistant?: boolean } {
+function usageFromEntry(entry: unknown): {
+	usage?: Usage;
+	assistant?: boolean;
+} {
 	if (!entry || typeof entry !== "object") return {};
 	const candidate = entry as {
 		type?: string;
@@ -143,11 +142,15 @@ export function collectStatusLineUsage(entries: readonly unknown[]): StatusLineU
 	};
 	for (const entry of entries) {
 		if (entry && typeof entry === "object") {
-			const custom = entry as { type?: string; customType?: string; data?: { durationMs?: unknown } };
+			const custom = entry as {
+				type?: string;
+				customType?: string;
+				data?: { durationMs?: unknown };
+			};
 			if (
-				custom.type === "custom"
-				&& custom.customType === "claude-run-metrics"
-				&& typeof custom.data?.durationMs === "number"
+				custom.type === "custom" &&
+				custom.customType === "claude-run-metrics" &&
+				typeof custom.data?.durationMs === "number"
 			) {
 				totals.durationMs += custom.data.durationMs;
 			}
@@ -171,9 +174,10 @@ function renderContext(source: FooterSource, theme: FooterTheme): string {
 	const usage = source.getContextUsage();
 	const contextWindow = usage?.contextWindow ?? source.model?.contextWindow ?? 0;
 	const value = usage?.percent;
-	const display = value === null || value === undefined
-		? `ctx ?/${formatPiTokens(contextWindow)}`
-		: `ctx ${Math.round(value)}%/${formatPiTokens(contextWindow)}`;
+	const display =
+		value === null || value === undefined
+			? `ctx ?/${formatPiTokens(contextWindow)}`
+			: `ctx ${Math.round(value)}%/${formatPiTokens(contextWindow)}`;
 	if (value === null || value === undefined) return theme.fg("dim", display);
 	if (value < 90) return theme.fg("warning", display);
 	return theme.fg("error", display);
@@ -190,9 +194,9 @@ export function renderStatusLine(
 	const contextUsage = source.getContextUsage();
 	const contextWindow = contextUsage?.contextWindow ?? source.model?.contextWindow ?? 0;
 	const usingSubscription = Boolean(
-		source.model
-		&& source.modelRegistry.isUsingOAuth(source.model)
-		&& source.modelRegistry.getProvider(source.model.provider)?.auth.oauth?.isSubscription,
+		source.model &&
+			source.modelRegistry.isUsingOAuth(source.model) &&
+			source.modelRegistry.getProvider(source.model.provider)?.auth.oauth?.isSubscription,
 	);
 	const modelName = source.model?.id ?? "no model";
 	const modelDisplay = source.model?.reasoning
@@ -204,16 +208,21 @@ export function renderStatusLine(
 		model: theme.fg("customMessageLabel", modelDisplay),
 		context: renderContext(source, theme),
 		directory: theme.fg("success", `${formatCwd(source.cwd)}${branch ? ` (${branch})` : ""}`),
-		cache: totals.cacheRead > 0 || totals.cacheWrite > 0
-			? theme.fg("dim", [
-				...(totals.cacheRead > 0 ? [`R${formatPiTokens(totals.cacheRead)}`] : []),
-				...(totals.cacheWrite > 0 ? [`W${formatPiTokens(totals.cacheWrite)}`] : []),
-				...(totals.latestCacheHitRate !== undefined ? [`CH${totals.latestCacheHitRate.toFixed(1)}%`] : []),
-			].join(" "))
-			: undefined,
-		cost: totals.cost > 0 || usingSubscription
-			? theme.fg("dim", `$${totals.cost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`)
-			: undefined,
+		cache:
+			totals.cacheRead > 0 || totals.cacheWrite > 0
+				? theme.fg(
+						"dim",
+						[
+							...(totals.cacheRead > 0 ? [`R${formatPiTokens(totals.cacheRead)}`] : []),
+							...(totals.cacheWrite > 0 ? [`W${formatPiTokens(totals.cacheWrite)}`] : []),
+							...(totals.latestCacheHitRate !== undefined ? [`CH${totals.latestCacheHitRate.toFixed(1)}%`] : []),
+						].join(" "),
+					)
+				: undefined,
+		cost:
+			totals.cost > 0 || usingSubscription
+				? theme.fg("dim", `$${totals.cost.toFixed(3)}${usingSubscription ? " (sub)" : ""}`)
+				: undefined,
 		"session-name": source.sessionManager.getSessionName()
 			? theme.fg("dim", source.sessionManager.getSessionName()!)
 			: undefined,
@@ -222,19 +231,24 @@ export function renderStatusLine(
 			? theme.fg("dim", source.sessionManager.getSessionFile()!)
 			: undefined,
 		version: theme.fg("dim", `v${VERSION}`),
-		"context-remaining": contextUsage && contextUsage.percent !== null
-			? theme.fg("dim", `ctx ${Math.max(0, Math.round(100 - contextUsage.percent))}% left`)
-			: undefined,
+		"context-remaining":
+			contextUsage && contextUsage.percent !== null
+				? theme.fg("dim", `ctx ${Math.max(0, Math.round(100 - contextUsage.percent))}% left`)
+				: undefined,
 		"context-window": contextWindow > 0 ? theme.fg("dim", `${formatPiTokens(contextWindow)} window`) : undefined,
 		"input-tokens": totals.input > 0 ? theme.fg("dim", `↑${formatPiTokens(totals.input)}`) : undefined,
 		"output-tokens": totals.output > 0 ? theme.fg("dim", `↓${formatPiTokens(totals.output)}`) : undefined,
 		duration: totals.durationMs > 0 ? theme.fg("dim", formatDuration(totals.durationMs)) : undefined,
-		"exceeds-200k": contextUsage && contextUsage.tokens !== null && contextUsage.tokens > 200_000
-			? theme.fg("warning", ">200k")
-			: undefined,
+		"exceeds-200k":
+			contextUsage && contextUsage.tokens !== null && contextUsage.tokens > 200_000
+				? theme.fg("warning", ">200k")
+				: undefined,
 	};
 	const separator = ` ${theme.fg("dim", "|")} `;
-	return items.map((item) => values[item]).filter((value): value is string => Boolean(value)).join(separator);
+	return items
+		.map((item) => values[item])
+		.filter((value): value is string => Boolean(value))
+		.join(separator);
 }
 
 class StatusLineSetup implements Component {
@@ -256,7 +270,10 @@ class StatusLineSetup implements Component {
 		const enabled = new Set(configured);
 		this.items = [
 			...configured.map((id) => ({ id, enabled: true })),
-			...STATUS_LINE_ITEM_IDS.filter((id) => !enabled.has(id)).map((id) => ({ id, enabled: false })),
+			...STATUS_LINE_ITEM_IDS.filter((id) => !enabled.has(id)).map((id) => ({
+				id,
+				enabled: false,
+			})),
 		];
 	}
 
@@ -324,12 +341,7 @@ export async function showStatusLineSetup(
 ): Promise<StatusLineItemId[] | null> {
 	if (ctx.mode !== "tui") return null;
 	return ctx.ui.custom<StatusLineItemId[] | null>((tui, theme, _keybindings, done) => {
-		const component = new StatusLineSetup(
-			configured,
-			theme,
-			(items) => renderStatusLine(items, ctx, theme),
-			done,
-		);
+		const component = new StatusLineSetup(configured, theme, (items) => renderStatusLine(items, ctx, theme), done);
 		return {
 			render: (width) => component.render(width),
 			invalidate: () => component.invalidate(),

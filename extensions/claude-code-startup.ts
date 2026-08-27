@@ -8,15 +8,11 @@ import { ClaudeRunTelemetry, type RunMetricsEntry } from "./claude-run-telemetry
 import {
 	DEFAULT_STATUS_LINE_ITEMS,
 	loadStatusLineItems,
+	type StatusLineItemId,
 	saveStatusLineItems,
 	showStatusLineSetup,
-	type StatusLineItemId,
 } from "./claude-status-line.ts";
-import {
-	addUserPromptMarker,
-	formatRunSummary,
-	getClaudeSpinnerFrames,
-} from "./render-utils.ts";
+import { addUserPromptMarker, formatRunSummary, getClaudeSpinnerFrames } from "./render-utils.ts";
 
 let activeHeader: PiStartupHeader | undefined;
 let previousTheme: ExtensionContext["ui"]["theme"] | undefined;

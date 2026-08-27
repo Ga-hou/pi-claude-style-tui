@@ -2,9 +2,7 @@ import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { describe, it } from "node:test";
 
-const theme = JSON.parse(
-	await readFile(new URL("../themes/claude-code-dark.json", import.meta.url), "utf8"),
-) as {
+const theme = JSON.parse(await readFile(new URL("../themes/claude-code-dark.json", import.meta.url), "utf8")) as {
 	vars: Record<string, string>;
 	colors: Record<string, string>;
 };

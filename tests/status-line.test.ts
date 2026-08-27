@@ -16,30 +16,41 @@ const theme = {
 function source(percent: number | null = 50) {
 	return {
 		cwd: "/tmp/project",
-		model: { id: "test-model", provider: "test", contextWindow: 100_000, reasoning: true },
+		model: {
+			id: "test-model",
+			provider: "test",
+			contextWindow: 100_000,
+			reasoning: true,
+		},
 		thinkingLevel: "medium",
 		modelRegistry: {
 			isUsingOAuth: () => false,
 			getProvider: () => undefined,
 		},
-		getContextUsage: () => ({ tokens: 50_000, contextWindow: 100_000, percent }),
+		getContextUsage: () => ({
+			tokens: 50_000,
+			contextWindow: 100_000,
+			percent,
+		}),
 		sessionManager: {
 			getSessionName: () => "Status work",
 			getSessionId: () => "session-123",
 			getSessionFile: () => "/tmp/session.jsonl",
-			getEntries: () => [{
-				type: "message",
-				message: {
-					role: "assistant",
-					usage: {
-						input: 50,
-						output: 10,
-						cacheRead: 50,
-						cacheWrite: 0,
-						cost: { total: 0.125 },
+			getEntries: () => [
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						usage: {
+							input: 50,
+							output: 10,
+							cacheRead: 50,
+							cacheWrite: 0,
+							cost: { total: 0.125 },
+						},
 					},
 				},
-			}],
+			],
 		},
 	} as unknown as Pick<
 		ExtensionContext,
@@ -54,32 +65,59 @@ describe("Claude status line", () => {
 	});
 
 	it("uses Pi's cumulative cache and cost accounting buckets", () => {
-		assert.deepEqual(collectStatusLineUsage([
-			{
-				type: "message",
-				message: {
-					role: "assistant",
-					usage: { input: 25, cacheRead: 75, cacheWrite: 0, cost: { total: 0.1 } },
+		assert.deepEqual(
+			collectStatusLineUsage([
+				{
+					type: "message",
+					message: {
+						role: "assistant",
+						usage: {
+							input: 25,
+							cacheRead: 75,
+							cacheWrite: 0,
+							cost: { total: 0.1 },
+						},
+					},
 				},
-			},
-			{
-				type: "message",
-				message: {
-					role: "toolResult",
-					usage: { input: 5, output: 2, cacheRead: 10, cacheWrite: 20, cost: { total: 0.02 } },
+				{
+					type: "message",
+					message: {
+						role: "toolResult",
+						usage: {
+							input: 5,
+							output: 2,
+							cacheRead: 10,
+							cacheWrite: 20,
+							cost: { total: 0.02 },
+						},
+					},
 				},
+				{
+					type: "compaction",
+					usage: {
+						input: 3,
+						output: 1,
+						cacheRead: 5,
+						cacheWrite: 0,
+						cost: { total: 0.03 },
+					},
+				},
+				{
+					type: "custom",
+					customType: "claude-run-metrics",
+					data: { durationMs: 65_000 },
+				},
+			]),
+			{
+				input: 33,
+				output: 3,
+				cacheRead: 90,
+				cacheWrite: 20,
+				cost: 0.15000000000000002,
+				durationMs: 65_000,
+				latestCacheHitRate: 75,
 			},
-			{ type: "compaction", usage: { input: 3, output: 1, cacheRead: 5, cacheWrite: 0, cost: { total: 0.03 } } },
-			{ type: "custom", customType: "claude-run-metrics", data: { durationMs: 65_000 } },
-		]), {
-			input: 33,
-			output: 3,
-			cacheRead: 90,
-			cacheWrite: 20,
-			cost: 0.15000000000000002,
-			durationMs: 65_000,
-			latestCacheHitRate: 75,
-		});
+		);
 	});
 
 	it("renders configured order, cache, cost, and Pi context thresholds", () => {
@@ -93,7 +131,16 @@ describe("Claude status line", () => {
 		assert.match(renderStatusLine(["context"], source(null), theme), /<dim>ctx \?\/100k<\/dim>/);
 		assert.match(
 			renderStatusLine(
-				["session-name", "session-id", "transcript-path", "context-remaining", "context-window", "input-tokens", "output-tokens", "version"],
+				[
+					"session-name",
+					"session-id",
+					"transcript-path",
+					"context-remaining",
+					"context-window",
+					"input-tokens",
+					"output-tokens",
+					"version",
+				],
 				source(25),
 				theme,
 			),
@@ -111,7 +158,9 @@ describe("Claude status line", () => {
 
 		let saved: unknown;
 		(ctx.ui as any).custom = async (factory: any) => {
-			component = factory({ requestRender() {} }, theme, {}, (value: unknown) => { saved = value; });
+			component = factory({ requestRender() {} }, theme, {}, (value: unknown) => {
+				saved = value;
+			});
 			component!.handleInput("\u001b[C");
 			component!.handleInput("\r");
 			return saved;

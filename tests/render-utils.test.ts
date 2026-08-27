@@ -13,15 +13,15 @@ import {
 	formatThinkingLabel,
 	formatTokenCount,
 	formatWorkingMessage,
-	getStreamDeltaLength,
 	getClaudeSpinnerFrames,
+	getStreamDeltaLength,
 	highlightSlashCommands,
 	isEditorBorderLine,
-	stripAnsi,
 	PI_WORKING_VERBS,
-	TURN_COMPLETION_VERBS,
 	pickCompletionVerb,
 	pickWorkingVerb,
+	stripAnsi,
+	TURN_COMPLETION_VERBS,
 } from "../extensions/render-utils.ts";
 
 describe("formatCwd", () => {
@@ -62,7 +62,7 @@ describe("run metrics formatting", () => {
 	it("counts every Claude-style generated-content delta", () => {
 		assert.equal(getStreamDeltaLength({ type: "text_delta", delta: "hello" }), 5);
 		assert.equal(getStreamDeltaLength({ type: "thinking_delta", delta: "reasoning" }), 9);
-		assert.equal(getStreamDeltaLength({ type: "toolcall_delta", delta: "{\"path\":" }), 8);
+		assert.equal(getStreamDeltaLength({ type: "toolcall_delta", delta: '{"path":' }), 8);
 		assert.equal(getStreamDeltaLength({ type: "done" }), 0);
 	});
 
@@ -74,10 +74,7 @@ describe("run metrics formatting", () => {
 		assert.equal(formatWorkingMessage("Crafting", 30_001, 0), "Crafting… (30s)");
 		assert.equal(formatWorkingMessage("Crafting", 30_001, 5_000), "Crafting… (30s · ↓ 1.3k tokens)");
 		assert.equal(formatWorkingMessage("Crafting", 999, 40, true), "Crafting… (0s · ↓ 10 tokens)");
-		assert.equal(
-			formatWorkingMessage("Crafting", 5_000, 0, false, "xhigh"),
-			"Crafting… (thinking with xhigh effort)",
-		);
+		assert.equal(formatWorkingMessage("Crafting", 5_000, 0, false, "xhigh"), "Crafting… (thinking with xhigh effort)");
 		assert.equal(
 			formatWorkingMessage("Crafting", 30_001, 5_000, false, "xhigh"),
 			"Crafting… (30s · ↓ 1.3k tokens · thinking with xhigh effort)",
@@ -101,12 +98,10 @@ describe("Claude working color animation", () => {
 		};
 		const message = formatAnimatedWorkingMessage("Precipitating… (3s)", 3_000, theme);
 		assert.equal(stripAnsi(message), message);
-		assert.deepEqual(calls.map(({ color }) => color), [
-			"accent",
-			"thinkingXhigh",
-			"accent",
-			"muted",
-		]);
+		assert.deepEqual(
+			calls.map(({ color }) => color),
+			["accent", "thinkingXhigh", "accent", "muted"],
+		);
 		assert.equal(calls.map(({ text }) => text).join(""), "Precipitating… (3s)");
 	});
 });
@@ -114,13 +109,35 @@ describe("Claude working color animation", () => {
 describe("Claude working glyph animation", () => {
 	it("mirrors Claude's macOS frame sequence", () => {
 		assert.deepEqual(getClaudeSpinnerFrames("xterm-256color", "darwin"), [
-			"·", "✢", "✳", "✶", "✻", "✽", "✽", "✻", "✶", "✳", "✢", "·",
+			"·",
+			"✢",
+			"✳",
+			"✶",
+			"✻",
+			"✽",
+			"✽",
+			"✻",
+			"✶",
+			"✳",
+			"✢",
+			"·",
 		]);
 	});
 
 	it("uses Claude's Ghostty-safe final glyph", () => {
 		assert.deepEqual(getClaudeSpinnerFrames("xterm-ghostty", "darwin"), [
-			"·", "✢", "✳", "✶", "✻", "*", "*", "✻", "✶", "✳", "✢", "·",
+			"·",
+			"✢",
+			"✳",
+			"✶",
+			"✻",
+			"*",
+			"*",
+			"✻",
+			"✶",
+			"✳",
+			"✢",
+			"·",
 		]);
 	});
 });
@@ -128,8 +145,14 @@ describe("Claude working glyph animation", () => {
 describe("Claude verb sampling", () => {
 	it("samples a spinner verb from Claude's full list", () => {
 		assert.equal(PI_WORKING_VERBS.length, 187);
-		assert.equal(pickWorkingVerb(() => 0), PI_WORKING_VERBS[0]);
-		assert.equal(pickWorkingVerb(() => 0.999), PI_WORKING_VERBS.at(-1));
+		assert.equal(
+			pickWorkingVerb(() => 0),
+			PI_WORKING_VERBS[0],
+		);
+		assert.equal(
+			pickWorkingVerb(() => 0.999),
+			PI_WORKING_VERBS.at(-1),
+		);
 	});
 
 	it("samples completion verbs from Claude's eight past-tense options", () => {
@@ -143,15 +166,21 @@ describe("Claude verb sampling", () => {
 			"Sautéed",
 			"Worked",
 		]);
-		assert.equal(pickCompletionVerb(() => 0), "Baked");
-		assert.equal(pickCompletionVerb(() => 0.999), "Worked");
+		assert.equal(
+			pickCompletionVerb(() => 0),
+			"Baked",
+		);
+		assert.equal(
+			pickCompletionVerb(() => 0.999),
+			"Worked",
+		);
 	});
 });
 
 describe("editor border detection", () => {
 	it("recognizes plain and scroll indicator borders", () => {
 		assert.equal(isEditorBorderLine("─".repeat(40)), true);
-		assert.equal(isEditorBorderLine("\x1b[38;2;1;2;3m" + "─".repeat(40) + "\x1b[39m"), true);
+		assert.equal(isEditorBorderLine(`\x1b[38;2;1;2;3m${"─".repeat(40)}\x1b[39m`), true);
 		assert.equal(isEditorBorderLine("─── ↑ 2 more ──────────"), true);
 		assert.equal(isEditorBorderLine("─── ↓ 5 more ──────────"), true);
 	});
@@ -163,13 +192,7 @@ describe("editor border detection", () => {
 	});
 
 	it("finds the bottom border before autocomplete rows", () => {
-		const lines = [
-			"─".repeat(20),
-			" content line",
-			"─── ↓ 1 more ───────",
-			" /model",
-			" /compact",
-		];
+		const lines = ["─".repeat(20), " content line", "─── ↓ 1 more ───────", " /model", " /compact"];
 		assert.equal(findBottomBorderIndex(lines), 2);
 	});
 
@@ -197,7 +220,11 @@ describe("highlightSlashCommands", () => {
 
 	it("preserves cursor ANSI inside the highlighted command", () => {
 		const command = "  /\x1b[7mm\x1b[27model";
-		const result = highlightSlashCommands(["─".repeat(20), command, "─".repeat(20)], new Set(["model"]), (text) => `<blue>${text}</blue>`);
+		const result = highlightSlashCommands(
+			["─".repeat(20), command, "─".repeat(20)],
+			new Set(["model"]),
+			(text) => `<blue>${text}</blue>`,
+		);
 		assert.equal(result[1], `  <blue>/\x1b[7mm\x1b[27model</blue>`);
 	});
 });

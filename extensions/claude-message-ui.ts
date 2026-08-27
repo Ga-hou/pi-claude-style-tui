@@ -6,8 +6,8 @@ import {
 	createLsToolDefinition,
 	createReadToolDefinition,
 	createWriteToolDefinition,
-	keyHint,
 	type ExtensionAPI,
+	keyHint,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
@@ -64,11 +64,7 @@ export function addAssistantResponseMarker(markdown: string, marker = "●"): st
 }
 
 function renderCall(label: string, detail: string, theme: Theme, context: RenderContext): Text {
-	const dotColor = context.isError
-		? "error"
-		: context.executionStarted && !context.isPartial
-			? "success"
-			: "accent";
+	const dotColor = context.isError ? "error" : context.executionStarted && !context.isPartial ? "success" : "accent";
 	const suffix = detail ? theme.fg("muted", `(${singleLine(detail)})`) : "";
 	return new Text(`${theme.fg(dotColor, "●")} ${theme.fg("toolTitle", theme.bold(label))}${suffix}`, 1, 0);
 }
@@ -113,7 +109,8 @@ function lineSummary(noun: string, output: string): string {
 /** Register compact render-only overrides for Pi-owned local built-in tools. */
 export function registerClaudeToolRenderers(pi: ExtensionAPI, cwd: string): void {
 	const piOwnedTools = new Set(
-		pi.getAllTools()
+		pi
+			.getAllTools()
 			.filter((tool) => tool.sourceInfo.source === "builtin")
 			.map((tool) => tool.name),
 	);

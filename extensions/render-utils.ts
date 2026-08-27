@@ -5,6 +5,7 @@ type RenderTheme = Pick<ExtensionContext["ui"]["theme"], "fg">;
 
 /** Strip CSI SGR and APC sequences so border detection can inspect plain text. */
 export function stripAnsi(text: string): string {
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI control bytes are the intended match.
 	return text.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b_[^\x07]*\x07/g, "");
 }
 
@@ -44,9 +45,10 @@ export const SHOW_TURN_STATS_AFTER_MS = 30_000;
 
 export function getStreamDeltaLength(event: { type: string; delta?: unknown }): number {
 	if (
-		(event.type === "text_delta" || event.type === "thinking_delta" || event.type === "toolcall_delta")
-		&& typeof event.delta === "string"
-	) return event.delta.length;
+		(event.type === "text_delta" || event.type === "thinking_delta" || event.type === "toolcall_delta") &&
+		typeof event.delta === "string"
+	)
+		return event.delta.length;
 	return 0;
 }
 
@@ -74,11 +76,7 @@ export function formatRunSummary(milliseconds: number, verb = "Worked"): string 
 }
 
 /** Apply Claude's right-to-left, three-character shimmer to the working label. */
-export function formatAnimatedWorkingMessage(
-	message: string,
-	elapsedMs: number,
-	theme: RenderTheme,
-): string {
+export function formatAnimatedWorkingMessage(message: string, elapsedMs: number, theme: RenderTheme): string {
 	const labelEnd = message.indexOf("…") + 1;
 	if (labelEnd <= 0) return message;
 
@@ -101,15 +99,13 @@ export function formatAnimatedWorkingMessage(
 }
 
 /** Claude's 120ms working glyph sweep, mirrored to animate back to its origin. */
-export function getClaudeSpinnerFrames(
-	term = process.env.TERM,
-	platform = process.platform,
-): string[] {
-	const forward = term === "xterm-ghostty"
-		? ["·", "✢", "✳", "✶", "✻", "*"]
-		: platform === "darwin"
-			? ["·", "✢", "✳", "✶", "✻", "✽"]
-			: ["·", "✢", "*", "✶", "✻", "✽"];
+export function getClaudeSpinnerFrames(term = process.env.TERM, platform = process.platform): string[] {
+	const forward =
+		term === "xterm-ghostty"
+			? ["·", "✢", "✳", "✶", "✻", "*"]
+			: platform === "darwin"
+				? ["·", "✢", "✳", "✶", "✻", "✽"]
+				: ["·", "✢", "*", "✶", "✻", "✽"];
 	return [...forward, ...[...forward].reverse()];
 }
 
@@ -135,7 +131,7 @@ export function addUserPromptMarker(markdown: string, marker = "❯"): string {
 
 function rawIndexAtPlainOffset(raw: string, offset: number): number {
 	let plainOffset = 0;
-	for (let index = 0; index < raw.length;) {
+	for (let index = 0; index < raw.length; ) {
 		if (raw[index] === "\x1b" && raw[index + 1] === "[") {
 			const end = raw.indexOf("m", index + 2);
 			if (end !== -1) {
@@ -423,11 +419,7 @@ export function addEditorPromptMarker(lines: string[], marker: string): string[]
 }
 
 /** Replace editor borders with Claude Code-style straight separators. */
-export function applyStraightEditorBorders(
-	lines: string[],
-	width: number,
-	color: (text: string) => string,
-): string[] {
+export function applyStraightEditorBorders(lines: string[], width: number, color: (text: string) => string): string[] {
 	if (lines.length === 0 || width < 2) return lines;
 
 	const result = lines.slice();

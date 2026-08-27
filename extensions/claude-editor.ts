@@ -5,16 +5,33 @@ import {
 	type KeybindingsManager,
 } from "@earendil-works/pi-coding-agent";
 import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
-import {
-	addEditorPromptMarker,
-	applyStraightEditorBorders,
-	highlightSlashCommands,
-} from "./render-utils.ts";
+import { addEditorPromptMarker, applyStraightEditorBorders, highlightSlashCommands } from "./render-utils.ts";
 
 const PI_BUILTIN_COMMAND_NAMES = [
-	"settings", "model", "tree", "thinking", "scoped-models", "export", "import", "share", "copy",
-	"name", "session", "changelog", "hotkeys", "fork", "clone", "trust", "login", "logout", "new",
-	"compact", "resume", "reload", "quit", "statusline",
+	"settings",
+	"model",
+	"tree",
+	"thinking",
+	"scoped-models",
+	"export",
+	"import",
+	"share",
+	"copy",
+	"name",
+	"session",
+	"changelog",
+	"hotkeys",
+	"fork",
+	"clone",
+	"trust",
+	"login",
+	"logout",
+	"new",
+	"compact",
+	"resume",
+	"reload",
+	"quit",
+	"statusline",
 ] as const;
 
 class ClaudeStyleEditor extends CustomEditor {
@@ -48,22 +65,23 @@ class ClaudeStyleEditor extends CustomEditor {
 
 export function applyClaudeEditor(pi: ExtensionAPI, ctx: ExtensionContext): void {
 	const paintSuggestion = (text: string) => ctx.ui.theme.fg("customMessageLabel", text);
-	ctx.ui.setEditorComponent((tui, theme, keybindings) =>
-		new ClaudeStyleEditor(
-			tui,
-			{
-				...theme,
-				selectList: {
-					...theme.selectList,
-					selectedPrefix: paintSuggestion,
-					selectedText: paintSuggestion,
+	ctx.ui.setEditorComponent(
+		(tui, theme, keybindings) =>
+			new ClaudeStyleEditor(
+				tui,
+				{
+					...theme,
+					selectList: {
+						...theme.selectList,
+						selectedPrefix: paintSuggestion,
+						selectedText: paintSuggestion,
+					},
 				},
-			},
-			keybindings,
-			(text) => ctx.ui.theme.fg("text", text),
-			(text) => ctx.ui.theme.fg("borderMuted", text),
-			paintSuggestion,
-			() => new Set([...PI_BUILTIN_COMMAND_NAMES, ...pi.getCommands().map((command) => command.name)]),
-		)
+				keybindings,
+				(text) => ctx.ui.theme.fg("text", text),
+				(text) => ctx.ui.theme.fg("borderMuted", text),
+				paintSuggestion,
+				() => new Set([...PI_BUILTIN_COMMAND_NAMES, ...pi.getCommands().map((command) => command.name)]),
+			),
 	);
 }

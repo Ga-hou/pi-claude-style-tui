@@ -1,13 +1,7 @@
-import { VERSION, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { type ExtensionAPI, type ExtensionContext, VERSION } from "@earendil-works/pi-coding-agent";
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
-import {
-	center,
-	formatCwd,
-	formatModelLabel,
-	formatThinkingLabel,
-	padRight,
-} from "./render-utils.ts";
+import { center, formatCwd, formatModelLabel, formatThinkingLabel, padRight } from "./render-utils.ts";
 
 const LOGO_CELL = "███";
 const LOGO_ANIMATION_INTERVAL_MS = 120;
@@ -23,9 +17,30 @@ type LogoFrame = {
 };
 
 const LOGO_FRAMES: LogoFrame[] = [
-	...Array.from({ length: 4 }, (_, ay) => ({ phase: 0, active: "left" as const, ax: 2, ay, flash: false, white: false })),
-	...Array.from({ length: 3 }, (_, ay) => ({ phase: 1, active: "top" as const, ax: 2, ay, flash: false, white: false })),
-	...Array.from({ length: 5 }, (_, ay) => ({ phase: 2, active: "right" as const, ax: 5, ay, flash: false, white: false })),
+	...Array.from({ length: 4 }, (_, ay) => ({
+		phase: 0,
+		active: "left" as const,
+		ax: 2,
+		ay,
+		flash: false,
+		white: false,
+	})),
+	...Array.from({ length: 3 }, (_, ay) => ({
+		phase: 1,
+		active: "top" as const,
+		ax: 2,
+		ay,
+		flash: false,
+		white: false,
+	})),
+	...Array.from({ length: 5 }, (_, ay) => ({
+		phase: 2,
+		active: "right" as const,
+		ax: 5,
+		ay,
+		flash: false,
+		white: false,
+	})),
 	{ phase: 3, active: "none", ax: 0, ay: 0, flash: false, white: false },
 	{ phase: 3, active: "none", ax: 0, ay: 0, flash: true, white: false },
 	{ phase: 3, active: "none", ax: 0, ay: 0, flash: false, white: false },

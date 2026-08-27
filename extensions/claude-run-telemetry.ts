@@ -90,13 +90,11 @@ export class ClaudeRunTelemetry {
 
 	onStream(event: AssistantStreamEvent, ctx: ExtensionContext): void {
 		this.streamingResponseLength += getStreamDeltaLength(event);
-		const delta = (
-			event.type === "thinking_delta"
-			|| event.type === "text_delta"
-			|| event.type === "toolcall_delta"
-		) && typeof event.delta === "string"
-			? event.delta
-			: "";
+		const delta =
+			(event.type === "thinking_delta" || event.type === "text_delta" || event.type === "toolcall_delta") &&
+			typeof event.delta === "string"
+				? event.delta
+				: "";
 		if (event.type === "thinking_delta" && delta.trim().length > 0) {
 			this.thinkingActive = true;
 			if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
@@ -135,8 +133,6 @@ export class ClaudeRunTelemetry {
 			false,
 			this.thinkingActive ? this.context.thinkingLevel : undefined,
 		);
-		this.context.ui.setWorkingMessage(
-			formatAnimatedWorkingMessage(message, elapsedMs, this.context.ui.theme),
-		);
+		this.context.ui.setWorkingMessage(formatAnimatedWorkingMessage(message, elapsedMs, this.context.ui.theme));
 	}
 }

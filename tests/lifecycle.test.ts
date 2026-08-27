@@ -5,7 +5,9 @@ import claudeCodeTui from "../extensions/claude-code-startup.ts";
 import { stripAnsi } from "../extensions/render-utils.ts";
 
 type Handler = (event: any, ctx: ExtensionContext) => unknown | Promise<unknown>;
-type Command = { handler: (args: string, ctx: ExtensionContext) => unknown | Promise<unknown> };
+type Command = {
+	handler: (args: string, ctx: ExtensionContext) => unknown | Promise<unknown>;
+};
 
 function createHarness() {
 	const handlers = new Map<string, Handler[]>();
@@ -45,7 +47,12 @@ function createHarness() {
 	const ctx = {
 		mode: "tui",
 		cwd: "/tmp/project",
-		model: { id: "test-model", provider: "test", contextWindow: 100_000, reasoning: true },
+		model: {
+			id: "test-model",
+			provider: "test",
+			contextWindow: 100_000,
+			reasoning: true,
+		},
 		modelRegistry: {
 			isUsingOAuth: () => false,
 			getProvider: () => undefined,
@@ -92,15 +99,11 @@ function createHarness() {
 		getShutdownCalls: () => shutdownCalls,
 		renderFooter(width = 120) {
 			if (!footerFactory) return [];
-			return footerFactory(
-				{ requestRender() {} },
-				ui.theme,
-				{
-					onBranchChange: () => () => {},
-					getGitBranch: () => "main",
-					getExtensionStatuses: () => new Map(),
-				},
-			).render(width);
+			return footerFactory({ requestRender() {} }, ui.theme, {
+				onBranchChange: () => () => {},
+				getGitBranch: () => "main",
+				getExtensionStatuses: () => new Map(),
+			}).render(width);
 		},
 		transformMarkdown(markdown: string, context: any) {
 			return markdownTransformer?.(markdown, context) ?? markdown;
@@ -136,11 +139,17 @@ describe("TUI lifecycle", () => {
 		await harness.commands.get("use-claude-style-tui")!.handler("", harness.ctx);
 
 		assert.equal(
-			harness.transformMarkdown("hello", { messageType: "assistant", isStreaming: true }),
+			harness.transformMarkdown("hello", {
+				messageType: "assistant",
+				isStreaming: true,
+			}),
 			"hello",
 		);
 		assert.equal(
-			harness.transformMarkdown("hello", { messageType: "assistant", isStreaming: false }),
+			harness.transformMarkdown("hello", {
+				messageType: "assistant",
+				isStreaming: false,
+			}),
 			"● hello",
 		);
 	});
@@ -150,18 +159,16 @@ describe("TUI lifecycle", () => {
 		await harness.commands.get("use-claude-style-tui")!.handler("", harness.ctx);
 		await harness.emit("before_agent_start");
 		assert.equal(harness.workingVisibility.at(-1), true);
-		assert.ok(harness.workingMessages.every((message) =>
-			!message || !stripAnsi(message).includes("effort"),
-		));
+		assert.ok(harness.workingMessages.every((message) => !message || !stripAnsi(message).includes("effort")));
 
 		await harness.emit("message_update", {
 			message: { role: "assistant" },
 			assistantMessageEvent: { type: "thinking_delta", delta: "reasoning" },
 		});
 		assert.equal(harness.workingVisibility.at(-1), true);
-		assert.ok(harness.workingMessages.some((message) =>
-			message && stripAnsi(message).includes("(thinking with xhigh effort)"),
-		));
+		assert.ok(
+			harness.workingMessages.some((message) => message && stripAnsi(message).includes("(thinking with xhigh effort)")),
+		);
 
 		await harness.emit("message_update", {
 			message: { role: "assistant" },

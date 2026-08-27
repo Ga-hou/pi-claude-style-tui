@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
-import {
-	addAssistantResponseMarker,
-	registerClaudeToolRenderers,
-} from "../extensions/claude-message-ui.ts";
+import { addAssistantResponseMarker, registerClaudeToolRenderers } from "../extensions/claude-message-ui.ts";
 
 describe("assistant response marker", () => {
 	it("prefixes ordinary prose exactly once", () => {
@@ -13,14 +10,7 @@ describe("assistant response marker", () => {
 	});
 
 	it("does not break block-level Markdown", () => {
-		for (const markdown of [
-			"# Heading",
-			"- item",
-			"1. item",
-			"> quote",
-			"```ts\nconst x = 1;\n```",
-			"| a | b |",
-		]) {
+		for (const markdown of ["# Heading", "- item", "1. item", "> quote", "```ts\nconst x = 1;\n```", "| a | b |"]) {
 			assert.equal(addAssistantResponseMarker(markdown), markdown);
 		}
 	});
@@ -40,18 +30,21 @@ describe("compact built-in tool renderers", () => {
 
 		registerClaudeToolRenderers(api, "/tmp/project");
 
-		assert.deepEqual(registered.map((tool) => tool.name), ["read", "bash"]);
+		assert.deepEqual(
+			registered.map((tool) => tool.name),
+			["read", "bash"],
+		);
 		assert.ok(registered.every((tool) => tool.renderShell === "self"));
 
 		const theme = {
 			fg: (_color: string, text: string) => text,
 			bold: (text: string) => text,
 		} as unknown as Theme;
-		const call = registered[0]!.renderCall(
-			{ path: "src/index.ts" },
-			theme,
-			{ executionStarted: true, isError: false, isPartial: false },
-		);
+		const call = registered[0]!.renderCall({ path: "src/index.ts" }, theme, {
+			executionStarted: true,
+			isError: false,
+			isPartial: false,
+		});
 		assert.match(call.render(80).join("\n"), /● Read\(src\/index\.ts\)/);
 	});
 });
