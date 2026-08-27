@@ -17,7 +17,8 @@ describe("Claude dark theme colors", () => {
 		assert.equal(theme.colors.accent, "accent");
 		assert.equal(theme.colors.thinkingXhigh, "claudeShimmer");
 		assert.equal(theme.colors.muted, "gray");
-		assert.equal(theme.colors.dim, "darkGray");
+		assert.equal(theme.colors.dim, "gray");
+		assert.equal(theme.colors.thinkingOff, "darkGray");
 		assert.equal(theme.colors.customMessageLabel, "blue");
 		assert.equal(theme.colors.bashMode, "bashBorder");
 	});

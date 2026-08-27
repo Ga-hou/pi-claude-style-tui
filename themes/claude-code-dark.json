@@ -30,7 +30,7 @@
     "error": "red",
     "warning": "yellow",
     "muted": "gray",
-    "dim": "darkGray",
+    "dim": "gray",
     "text": "text",
     "thinkingText": "gray",
     "selectedBg": "selectedBg",
