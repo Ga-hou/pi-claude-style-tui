@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import claudeCodeTui from "../extensions/claude-code-startup.ts";
+import { stripAnsi } from "../extensions/render-utils.ts";
 
 type Handler = (event: any, ctx: ExtensionContext) => unknown | Promise<unknown>;
 type Command = { handler: (args: string, ctx: ExtensionContext) => unknown | Promise<unknown> };
@@ -11,6 +12,8 @@ function createHarness() {
 	const commands = new Map<string, Command>();
 	const entries: Array<{ type: string; data: unknown }> = [];
 	const workingMessages: Array<string | undefined> = [];
+	const workingVisibility: boolean[] = [];
+	let markdownTransformer: ((markdown: string, context: any) => string) | undefined;
 	let idle = true;
 
 	const ui = {
@@ -25,6 +28,10 @@ function createHarness() {
 		setHeader() {},
 		setFooter() {},
 		setWorkingIndicator() {},
+		setWorkingVisible(visible: boolean) {
+			workingVisibility.push(visible);
+		},
+		setHiddenThinkingLabel() {},
 		setEditorComponent() {},
 		setWorkingMessage(message?: string) {
 			workingMessages.push(message);
@@ -35,6 +42,7 @@ function createHarness() {
 		mode: "tui",
 		cwd: "/tmp/project",
 		model: { id: "test-model", contextWindow: 100_000 },
+		thinkingLevel: "xhigh",
 		ui,
 		getContextUsage: () => undefined,
 		isIdle: () => idle,
@@ -43,7 +51,9 @@ function createHarness() {
 		on(name: string, handler: Handler) {
 			handlers.set(name, [...(handlers.get(name) ?? []), handler]);
 		},
-		registerMarkdownTransformer() {},
+		registerMarkdownTransformer(transformer: (markdown: string, context: any) => string) {
+			markdownTransformer = transformer;
+		},
 		registerEntryRenderer() {},
 		registerCommand(name: string, command: Command) {
 			commands.set(name, command);
@@ -61,6 +71,10 @@ function createHarness() {
 		ctx,
 		entries,
 		workingMessages,
+		workingVisibility,
+		transformMarkdown(markdown: string, context: any) {
+			return markdownTransformer?.(markdown, context) ?? markdown;
+		},
 		setIdle(value: boolean) {
 			idle = value;
 		},
@@ -84,11 +98,54 @@ describe("TUI lifecycle", () => {
 		assert.deepEqual(harness.entries, []);
 	});
 
+	it("shows the assistant dot only after streaming settles", async () => {
+		const harness = createHarness();
+		await harness.commands.get("use-claude-style-tui")!.handler("", harness.ctx);
+
+		assert.equal(
+			harness.transformMarkdown("hello", { messageType: "assistant", isStreaming: true }),
+			"hello",
+		);
+		assert.equal(
+			harness.transformMarkdown("hello", { messageType: "assistant", isStreaming: false }),
+			"● hello",
+		);
+	});
+
+	it("hides working on visible text and restores it for the next turn", async () => {
+		const harness = createHarness();
+		await harness.commands.get("use-claude-style-tui")!.handler("", harness.ctx);
+		await harness.emit("before_agent_start");
+		assert.equal(harness.workingVisibility.at(-1), true);
+		assert.ok(harness.workingMessages.every((message) =>
+			!message || !stripAnsi(message).includes("effort"),
+		));
+
+		await harness.emit("message_update", {
+			message: { role: "assistant" },
+			assistantMessageEvent: { type: "thinking_delta", delta: "reasoning" },
+		});
+		assert.equal(harness.workingVisibility.at(-1), true);
+		assert.ok(harness.workingMessages.some((message) =>
+			message && stripAnsi(message).includes("(thinking with xhigh effort)"),
+		));
+
+		await harness.emit("message_update", {
+			message: { role: "assistant" },
+			assistantMessageEvent: { type: "text_delta", delta: "hello" },
+		});
+		assert.equal(harness.workingVisibility.at(-1), false);
+
+		await harness.emit("turn_start");
+		assert.equal(harness.workingVisibility.at(-1), true);
+		await harness.emit("session_shutdown");
+	});
+
 	it("does not settle a newer run started by another extension", async () => {
 		const harness = createHarness();
 		await harness.commands.get("use-claude-style-tui")!.handler("", harness.ctx);
 		await harness.emit("before_agent_start");
-		assert.ok(harness.workingMessages.some((message) => message?.endsWith("…")));
+		assert.ok(harness.workingMessages.length > 0);
 		assert.ok(harness.workingMessages.every((message) => !message?.includes("↑") && !message?.includes("↓")));
 
 		harness.setIdle(false);

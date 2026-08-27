@@ -17,10 +17,12 @@ import {
 	claudeSuggestion,
 	claudeWarning,
 	formatCwd,
+	formatAnimatedWorkingMessage,
 	formatDuration,
 	formatModelLabel,
 	formatRunSummary,
 	formatThinkingLabel,
+	getClaudeSpinnerFrames,
 	formatTokenCount,
 	formatWorkingMessage,
 	getStreamDeltaLength,
@@ -29,6 +31,7 @@ import {
 	pickWorkingVerb,
 	padRight,
 } from "./render-utils.ts";
+import { addAssistantResponseMarker, registerClaudeToolRenderers } from "./claude-message-ui.ts";
 
 const LOGO_CELL = "███";
 const LOGO_ANIMATION_INTERVAL_MS = 120;
@@ -300,6 +303,7 @@ let runContext: ExtensionContext | undefined;
 let runStartedAt: number | undefined;
 let completedResponseLength = 0;
 let streamingResponseLength = 0;
+let thinkingActive = false;
 let workingVerb = "Thinking";
 
 function getResponseLength(message: { content: unknown }): number {
@@ -322,11 +326,15 @@ function clearRunTimers(): void {
 
 function updateWorkingMessage(): void {
 	if (runContext?.mode !== "tui" || runStartedAt === undefined) return;
-	runContext.ui.setWorkingMessage(formatWorkingMessage(
+	const elapsedMs = Date.now() - runStartedAt;
+	const message = formatWorkingMessage(
 		workingVerb,
-		Date.now() - runStartedAt,
+		elapsedMs,
 		completedResponseLength + streamingResponseLength,
-	));
+		false,
+		thinkingActive ? runContext.thinkingLevel : undefined,
+	);
+	runContext.ui.setWorkingMessage(formatAnimatedWorkingMessage(message, elapsedMs));
 }
 
 function startRun(ctx: ExtensionContext, reset: boolean): void {
@@ -338,20 +346,25 @@ function startRun(ctx: ExtensionContext, reset: boolean): void {
 	clearRunTimers();
 	runContext?.ui.setWorkingMessage(undefined);
 	runContext = ctx;
+	if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
 	runStartedAt = Date.now();
 	completedResponseLength = 0;
 	streamingResponseLength = 0;
+	thinkingActive = false;
 	workingVerb = pickWorkingVerb();
 	updateWorkingMessage();
 
-	runRefreshTimer = setInterval(updateWorkingMessage, 1000);
+	runRefreshTimer = setInterval(updateWorkingMessage, 200);
 	runRefreshTimer.unref?.();
 }
 
 function stopRun(ctx?: ExtensionContext): RunMetricsEntry | undefined {
 	clearRunTimers();
 	const activeContext = runContext ?? ctx;
-	if (activeContext?.mode === "tui") activeContext.ui.setWorkingMessage(undefined);
+	if (activeContext?.mode === "tui") {
+		activeContext.ui.setWorkingMessage(undefined);
+		activeContext.ui.setWorkingVisible(true);
+	}
 	if (runStartedAt === undefined) {
 		runContext = undefined;
 		return undefined;
@@ -365,6 +378,7 @@ function stopRun(ctx?: ExtensionContext): RunMetricsEntry | undefined {
 	runStartedAt = undefined;
 	completedResponseLength = 0;
 	streamingResponseLength = 0;
+	thinkingActive = false;
 	return metrics;
 }
 
@@ -406,7 +420,11 @@ function applyPiLook(pi: ExtensionAPI, ctx: ExtensionContext): void {
 			},
 		};
 	});
-	ctx.ui.setWorkingIndicator(undefined);
+	ctx.ui.setWorkingIndicator({
+		frames: getClaudeSpinnerFrames().map(brand),
+		intervalMs: 120,
+	});
+	ctx.ui.setHiddenThinkingLabel("∴ Thinking…");
 	ctx.ui.setEditorComponent((tui, theme, keybindings) =>
 		new ClaudeStyleEditor(
 			tui,
@@ -443,9 +461,12 @@ function schedulePiLook(pi: ExtensionAPI, ctx: ExtensionContext): void {
 }
 
 export default function (pi: ExtensionAPI) {
-	pi.registerMarkdownTransformer((markdown, { messageType }) =>
-		messageType === "user" ? addUserPromptMarker(markdown, claudeSubtle("❯")) : markdown
-	);
+	pi.registerMarkdownTransformer((markdown, { messageType, isStreaming }) => {
+		if (!claudeLookEnabled) return markdown;
+		if (messageType === "user") return addUserPromptMarker(markdown, claudeSubtle("❯"));
+		if (messageType === "assistant" && !isStreaming) return addAssistantResponseMarker(markdown);
+		return markdown;
+	});
 
 	pi.registerEntryRenderer("claude-run-metrics", (entry, _options, theme) => {
 		const metrics = entry.data as RunMetricsEntry;
@@ -454,6 +475,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", (_event, ctx) => {
+		if (ctx.mode === "tui") registerClaudeToolRenderers(pi, ctx.cwd);
 		schedulePiLook(pi, ctx);
 	});
 
@@ -465,10 +487,39 @@ export default function (pi: ExtensionAPI) {
 		if (claudeLookEnabled) startRun(ctx, false);
 	});
 
-	pi.on("message_update", (event) => {
+	pi.on("message_update", (event, ctx) => {
 		if (!claudeLookEnabled || event.message.role !== "assistant") return;
 		streamingResponseLength += getStreamDeltaLength(event.assistantMessageEvent);
+		const streamEvent = event.assistantMessageEvent;
+		const delta = (
+			streamEvent.type === "thinking_delta"
+			|| streamEvent.type === "text_delta"
+			|| streamEvent.type === "toolcall_delta"
+		) && typeof streamEvent.delta === "string"
+			? streamEvent.delta
+			: "";
+		if (streamEvent.type === "thinking_delta" && delta.trim().length > 0) {
+			thinkingActive = true;
+			if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
+		} else if (streamEvent.type === "text_delta" && delta.trim().length > 0) {
+			thinkingActive = false;
+			if (ctx.mode === "tui") ctx.ui.setWorkingVisible(false);
+		} else if (streamEvent.type === "toolcall_delta") {
+			thinkingActive = false;
+		}
 		updateWorkingMessage();
+	});
+
+	pi.on("turn_start", (_event, ctx) => {
+		if (!claudeLookEnabled) return;
+		thinkingActive = false;
+		if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
+	});
+
+	pi.on("tool_execution_start", (_event, ctx) => {
+		if (!claudeLookEnabled) return;
+		thinkingActive = false;
+		if (ctx.mode === "tui") ctx.ui.setWorkingVisible(true);
 	});
 
 	pi.on("message_end", (event) => {
@@ -515,6 +566,8 @@ export default function (pi: ExtensionAPI) {
 			ctx.ui.setHeader(undefined);
 			ctx.ui.setFooter(undefined);
 			ctx.ui.setWorkingIndicator(undefined);
+			ctx.ui.setWorkingVisible(true);
+			ctx.ui.setHiddenThinkingLabel(undefined);
 			ctx.ui.setEditorComponent(undefined);
 			ctx.ui.notify("Using default pi TUI", "info");
 		},

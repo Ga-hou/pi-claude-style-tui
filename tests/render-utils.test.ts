@@ -5,6 +5,7 @@ import {
 	addUserPromptMarker,
 	applyStraightEditorBorders,
 	findBottomBorderIndex,
+	formatAnimatedWorkingMessage,
 	formatCwd,
 	formatDuration,
 	formatModelLabel,
@@ -13,6 +14,7 @@ import {
 	formatTokenCount,
 	formatWorkingMessage,
 	getStreamDeltaLength,
+	getClaudeSpinnerFrames,
 	highlightSlashCommands,
 	isEditorBorderLine,
 	stripAnsi,
@@ -72,11 +74,43 @@ describe("run metrics formatting", () => {
 		assert.equal(formatWorkingMessage("Crafting", 30_001, 0), "Crafting… (30s)");
 		assert.equal(formatWorkingMessage("Crafting", 30_001, 5_000), "Crafting… (30s · ↓ 1.3k tokens)");
 		assert.equal(formatWorkingMessage("Crafting", 999, 40, true), "Crafting… (0s · ↓ 10 tokens)");
+		assert.equal(
+			formatWorkingMessage("Crafting", 5_000, 0, false, "xhigh"),
+			"Crafting… (thinking with xhigh effort)",
+		);
+		assert.equal(
+			formatWorkingMessage("Crafting", 30_001, 5_000, false, "xhigh"),
+			"Crafting… (30s · ↓ 1.3k tokens · thinking with xhigh effort)",
+		);
 	});
 
 	it("shows only the completed turn duration", () => {
 		assert.equal(formatRunSummary(65_000), "Worked for 1m 5s");
 		assert.equal(formatRunSummary(65_000, "Brewed"), "Brewed for 1m 5s");
+	});
+});
+
+describe("Claude working color animation", () => {
+	it("uses exact dark-theme Claude and shimmer RGB values", () => {
+		const message = formatAnimatedWorkingMessage("Precipitating… (3s)", 3_000);
+		assert.equal(stripAnsi(message), "Precipitating… (3s)");
+		assert.ok(message.includes("\x1b[38;2;215;119;87m"));
+		assert.ok(message.includes("\x1b[38;2;235;159;127m"));
+		assert.ok(message.includes("\x1b[38;2;153;153;153m"));
+	});
+});
+
+describe("Claude working glyph animation", () => {
+	it("mirrors Claude's macOS frame sequence", () => {
+		assert.deepEqual(getClaudeSpinnerFrames("xterm-256color", "darwin"), [
+			"·", "✢", "✳", "✶", "✻", "✽", "✽", "✻", "✶", "✳", "✢", "·",
+		]);
+	});
+
+	it("uses Claude's Ghostty-safe final glyph", () => {
+		assert.deepEqual(getClaudeSpinnerFrames("xterm-ghostty", "darwin"), [
+			"·", "✢", "✳", "✶", "✻", "*", "*", "✻", "✶", "✳", "✢", "·",
+		]);
 	});
 });
 

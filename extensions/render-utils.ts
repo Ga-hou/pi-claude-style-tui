@@ -2,11 +2,15 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 export const BRAND_RGB = "215;119;87";
 export const CLAUDE_SUBTLE_RGB = "80;80;80";
+export const CLAUDE_INACTIVE_RGB = "153;153;153";
+export const CLAUDE_SHIMMER_RGB = "235;159;127";
 export const CLAUDE_SUGGESTION_RGB = "177;185;249";
 export const CLAUDE_WARNING_RGB = "255;193;7";
 const foreground = (rgb: string, text: string) => `\x1b[38;2;${rgb}m${text}\x1b[39m`;
 export const brand = (text: string) => foreground(BRAND_RGB, text);
 export const claudeSubtle = (text: string) => foreground(CLAUDE_SUBTLE_RGB, text);
+export const claudeInactive = (text: string) => foreground(CLAUDE_INACTIVE_RGB, text);
+export const claudeShimmer = (text: string) => foreground(CLAUDE_SHIMMER_RGB, text);
 export const claudeSuggestion = (text: string) => foreground(CLAUDE_SUGGESTION_RGB, text);
 export const claudeWarning = (text: string) => foreground(CLAUDE_WARNING_RGB, text);
 
@@ -62,17 +66,53 @@ export function formatWorkingMessage(
 	milliseconds: number,
 	responseLength: number,
 	verbose = false,
+	thinkingLevel?: string,
 ): string {
-	if (!verbose && milliseconds <= SHOW_TURN_STATS_AFTER_MS) return `${verb}…`;
-
-	const parts = [formatDuration(milliseconds)];
-	const outputTokens = Math.round(responseLength / 4);
-	if (outputTokens > 0) parts.push(`↓ ${formatTokenCount(outputTokens)} tokens`);
-	return `${verb}… (${parts.join(" · ")})`;
+	const parts: string[] = [];
+	if (verbose || milliseconds > SHOW_TURN_STATS_AFTER_MS) {
+		parts.push(formatDuration(milliseconds));
+		const outputTokens = Math.round(responseLength / 4);
+		if (outputTokens > 0) parts.push(`↓ ${formatTokenCount(outputTokens)} tokens`);
+	}
+	if (thinkingLevel && thinkingLevel !== "off") {
+		parts.push(`thinking with ${thinkingLevel} effort`);
+	}
+	return parts.length > 0 ? `${verb}… (${parts.join(" · ")})` : `${verb}…`;
 }
 
 export function formatRunSummary(milliseconds: number, verb = "Worked"): string {
 	return `${verb} for ${formatDuration(milliseconds)}`;
+}
+
+/** Apply Claude's right-to-left, three-character shimmer to the working label. */
+export function formatAnimatedWorkingMessage(message: string, elapsedMs: number): string {
+	const labelEnd = message.indexOf("…") + 1;
+	if (labelEnd <= 0) return message;
+
+	const label = Array.from(message.slice(0, labelEnd));
+	const cyclePosition = Math.floor(Math.max(0, elapsedMs) / 200);
+	const glimmerIndex = label.length + 10 - (cyclePosition % (label.length + 20));
+	const shimmerStart = Math.min(label.length, Math.max(0, glimmerIndex - 1));
+	const shimmerEnd = Math.min(label.length, Math.max(0, glimmerIndex + 2));
+
+	const before = label.slice(0, shimmerStart).join("");
+	const shimmer = shimmerStart < shimmerEnd ? label.slice(shimmerStart, shimmerEnd).join("") : "";
+	const after = label.slice(shimmerEnd).join("");
+	const suffix = message.slice(labelEnd);
+	return `${brand(before)}${claudeShimmer(shimmer)}${brand(after)}${claudeInactive(suffix)}`;
+}
+
+/** Claude's 120ms working glyph sweep, mirrored to animate back to its origin. */
+export function getClaudeSpinnerFrames(
+	term = process.env.TERM,
+	platform = process.platform,
+): string[] {
+	const forward = term === "xterm-ghostty"
+		? ["·", "✢", "✳", "✶", "✻", "*"]
+		: platform === "darwin"
+			? ["·", "✢", "✳", "✶", "✻", "✽"]
+			: ["·", "✢", "*", "✶", "✻", "✽"];
+	return [...forward, ...[...forward].reverse()];
 }
 
 export const TURN_COMPLETION_VERBS = [

@@ -21,8 +21,10 @@ pi install /path/to/checkout
 - Compact single-column welcome card
 - Claude Code-inspired dark palette and prompt styling
 - Straight input separators and `❯` prompt markers
+- Safe `●` markers for prose-first Assistant responses without breaking block Markdown
+- Compact `● Tool(args)` / `└ result` rows for Pi-owned built-in tools, with expandable output
 - Two-line footer with model, context, cwd, branch, and thinking mode
-- Claude-style spinner verbs, delayed elapsed time, and estimated output-token count
+- Claude-style spinner verbs, mirrored `✻` working-glyph animation, delayed elapsed time, and estimated output-token count
 - Persistent `<verb> for <duration>` turn summaries
 - Slash-command highlighting
 
