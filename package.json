@@ -1,0 +1,52 @@
+{
+  "name": "pi-claude-style-tui",
+  "version": "0.1.0",
+  "description": "A Claude Code-inspired TUI for Pi with per-run elapsed time and token telemetry.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi",
+    "tui",
+    "startup",
+    "theme",
+    "claude",
+    "codex"
+  ],
+  "license": "MIT",
+  "homepage": "https://github.com/Ga-hou/pi-claude-style-tui#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ga-hou/pi-claude-style-tui.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ga-hou/pi-claude-style-tui/issues"
+  },
+  "files": [
+    "extensions",
+    "themes",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "node --experimental-strip-types --test tests/**/*.test.ts"
+  },
+  "pi": {
+    "extensions": [
+      "./extensions/claude-code-startup.ts"
+    ],
+    "themes": [
+      "./themes/claude-code-dark.json"
+    ]
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@earendil-works/pi-tui": "*",
+    "@types/node": "^24.0.0",
+    "typescript": "^5.0.0"
+  }
+}
