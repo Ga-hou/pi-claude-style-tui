@@ -88,8 +88,9 @@ describe("Claude status line", () => {
 		assert.ok(rendered.indexOf("R50 CH50.0%") < rendered.indexOf("ctx 91%/100k"));
 		assert.match(rendered, /test-model • medium/);
 		assert.match(rendered, /<error>ctx 91%\/100k<\/error>/);
-		assert.match(renderStatusLine(["context"], source(71), theme), /<warning>ctx 71%\/100k<\/warning>/);
-		assert.match(renderStatusLine(["context"], source(70), theme), /<dim>ctx 70%\/100k<\/dim>/);
+		assert.match(renderStatusLine(["context"], source(70), theme), /<warning>ctx 70%\/100k<\/warning>/);
+		assert.match(renderStatusLine(["context"], source(90), theme), /<error>ctx 90%\/100k<\/error>/);
+		assert.match(renderStatusLine(["context"], source(null), theme), /<dim>ctx \?\/100k<\/dim>/);
 		assert.match(
 			renderStatusLine(
 				["session-name", "session-id", "transcript-path", "context-remaining", "context-window", "input-tokens", "output-tokens", "version"],

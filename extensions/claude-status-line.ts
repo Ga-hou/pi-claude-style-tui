@@ -170,13 +170,13 @@ export function collectStatusLineUsage(entries: readonly unknown[]): StatusLineU
 function renderContext(source: FooterSource, theme: FooterTheme): string {
 	const usage = source.getContextUsage();
 	const contextWindow = usage?.contextWindow ?? source.model?.contextWindow ?? 0;
-	const value = usage?.percent ?? 0;
-	const display = usage?.percent === null || !usage
+	const value = usage?.percent;
+	const display = value === null || value === undefined
 		? `ctx ?/${formatPiTokens(contextWindow)}`
 		: `ctx ${Math.round(value)}%/${formatPiTokens(contextWindow)}`;
-	if (value > 90) return theme.fg("error", display);
-	if (value > 70) return theme.fg("warning", display);
-	return theme.fg("dim", display);
+	if (value === null || value === undefined) return theme.fg("dim", display);
+	if (value < 90) return theme.fg("warning", display);
+	return theme.fg("error", display);
 }
 
 export function renderStatusLine(
