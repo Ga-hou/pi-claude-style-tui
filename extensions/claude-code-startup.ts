@@ -14,8 +14,6 @@ import {
 } from "./claude-status-line.ts";
 import {
 	addUserPromptMarker,
-	brand,
-	claudeSubtle,
 	formatRunSummary,
 	getClaudeSpinnerFrames,
 } from "./render-utils.ts";
@@ -25,6 +23,7 @@ let previousTheme: ExtensionContext["ui"]["theme"] | undefined;
 let startupTimer: NodeJS.Timeout | undefined;
 let sessionGeneration = 0;
 let statusLineItems: StatusLineItemId[] = [...DEFAULT_STATUS_LINE_ITEMS];
+let paintUserPromptMarker = (text: string): string => text;
 
 function disposeHeader(): void {
 	activeHeader?.dispose();
@@ -36,6 +35,7 @@ function applyClaudeLook(pi: ExtensionAPI, ctx: ExtensionContext): void {
 
 	previousTheme ??= ctx.ui.theme;
 	ctx.ui.setTheme("claude-code-dark");
+	paintUserPromptMarker = (text) => ctx.ui.theme.fg("dim", text);
 	ctx.ui.setTitle("Pi");
 	ctx.ui.setHeader((tui) => {
 		disposeHeader();
@@ -44,7 +44,7 @@ function applyClaudeLook(pi: ExtensionAPI, ctx: ExtensionContext): void {
 	});
 	applyClaudeFooter(pi, ctx, statusLineItems);
 	ctx.ui.setWorkingIndicator({
-		frames: getClaudeSpinnerFrames().map(brand),
+		frames: getClaudeSpinnerFrames().map((frame) => ctx.ui.theme.fg("accent", frame)),
 		intervalMs: 120,
 	});
 	ctx.ui.setHiddenThinkingLabel("∴ Thinking…");
@@ -69,13 +69,14 @@ function scheduleClaudeLook(pi: ExtensionAPI, ctx: ExtensionContext): void {
 function restorePreviousTheme(ctx: ExtensionContext): void {
 	if (previousTheme && ctx.mode === "tui") ctx.ui.setTheme(previousTheme);
 	previousTheme = undefined;
+	paintUserPromptMarker = (text) => text;
 }
 
 export default function (pi: ExtensionAPI) {
 	const telemetry = new ClaudeRunTelemetry();
 
 	pi.registerMarkdownTransformer((markdown, { messageType, isStreaming }) => {
-		if (messageType === "user") return addUserPromptMarker(markdown, claudeSubtle("❯"));
+		if (messageType === "user") return addUserPromptMarker(markdown, paintUserPromptMarker("❯"));
 		if (messageType === "assistant" && !isStreaming) return addAssistantResponseMarker(markdown);
 		return markdown;
 	});

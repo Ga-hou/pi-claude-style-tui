@@ -1,18 +1,7 @@
+import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
-export const BRAND_RGB = "215;119;87";
-export const CLAUDE_SUBTLE_RGB = "80;80;80";
-export const CLAUDE_INACTIVE_RGB = "153;153;153";
-export const CLAUDE_SHIMMER_RGB = "235;159;127";
-export const CLAUDE_SUGGESTION_RGB = "177;185;249";
-export const CLAUDE_WARNING_RGB = "255;193;7";
-const foreground = (rgb: string, text: string) => `\x1b[38;2;${rgb}m${text}\x1b[39m`;
-export const brand = (text: string) => foreground(BRAND_RGB, text);
-export const claudeSubtle = (text: string) => foreground(CLAUDE_SUBTLE_RGB, text);
-export const claudeInactive = (text: string) => foreground(CLAUDE_INACTIVE_RGB, text);
-export const claudeShimmer = (text: string) => foreground(CLAUDE_SHIMMER_RGB, text);
-export const claudeSuggestion = (text: string) => foreground(CLAUDE_SUGGESTION_RGB, text);
-export const claudeWarning = (text: string) => foreground(CLAUDE_WARNING_RGB, text);
+type RenderTheme = Pick<ExtensionContext["ui"]["theme"], "fg">;
 
 /** Strip CSI SGR and APC sequences so border detection can inspect plain text. */
 export function stripAnsi(text: string): string {
@@ -85,7 +74,11 @@ export function formatRunSummary(milliseconds: number, verb = "Worked"): string 
 }
 
 /** Apply Claude's right-to-left, three-character shimmer to the working label. */
-export function formatAnimatedWorkingMessage(message: string, elapsedMs: number): string {
+export function formatAnimatedWorkingMessage(
+	message: string,
+	elapsedMs: number,
+	theme: RenderTheme,
+): string {
 	const labelEnd = message.indexOf("…") + 1;
 	if (labelEnd <= 0) return message;
 
@@ -99,7 +92,12 @@ export function formatAnimatedWorkingMessage(message: string, elapsedMs: number)
 	const shimmer = shimmerStart < shimmerEnd ? label.slice(shimmerStart, shimmerEnd).join("") : "";
 	const after = label.slice(shimmerEnd).join("");
 	const suffix = message.slice(labelEnd);
-	return `${brand(before)}${claudeShimmer(shimmer)}${brand(after)}${claudeInactive(suffix)}`;
+	return [
+		theme.fg("accent", before),
+		theme.fg("thinkingXhigh", shimmer),
+		theme.fg("accent", after),
+		theme.fg("muted", suffix),
+	].join("");
 }
 
 /** Claude's 120ms working glyph sweep, mirrored to animate back to its origin. */
@@ -428,7 +426,7 @@ export function addEditorPromptMarker(lines: string[], marker: string): string[]
 export function applyStraightEditorBorders(
 	lines: string[],
 	width: number,
-	color: (text: string) => string = brand,
+	color: (text: string) => string,
 ): string[] {
 	if (lines.length === 0 || width < 2) return lines;
 

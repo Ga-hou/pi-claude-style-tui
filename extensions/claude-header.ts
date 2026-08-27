@@ -2,7 +2,6 @@ import { VERSION, type ExtensionAPI, type ExtensionContext } from "@earendil-wor
 import type { Component, TUI } from "@earendil-works/pi-tui";
 import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 import {
-	brand,
 	center,
 	formatCwd,
 	formatModelLabel,
@@ -193,7 +192,7 @@ export class PiStartupHeader implements Component {
 
 	render(width: number): string[] {
 		const theme = this.ctx.ui.theme;
-		const paint = brand;
+		const paint = (text: string) => theme.fg("accent", text);
 		const muted = (s: string) => theme.fg("muted", s);
 		const dim = (s: string) => theme.fg("dim", s);
 		const bold = (s: string) => theme.bold(s);

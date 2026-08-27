@@ -8,7 +8,6 @@ import type { EditorTheme, TUI } from "@earendil-works/pi-tui";
 import {
 	addEditorPromptMarker,
 	applyStraightEditorBorders,
-	claudeSuggestion,
 	highlightSlashCommands,
 } from "./render-utils.ts";
 
@@ -48,6 +47,7 @@ class ClaudeStyleEditor extends CustomEditor {
 }
 
 export function applyClaudeEditor(pi: ExtensionAPI, ctx: ExtensionContext): void {
+	const paintSuggestion = (text: string) => ctx.ui.theme.fg("customMessageLabel", text);
 	ctx.ui.setEditorComponent((tui, theme, keybindings) =>
 		new ClaudeStyleEditor(
 			tui,
@@ -55,14 +55,14 @@ export function applyClaudeEditor(pi: ExtensionAPI, ctx: ExtensionContext): void
 				...theme,
 				selectList: {
 					...theme.selectList,
-					selectedPrefix: claudeSuggestion,
-					selectedText: claudeSuggestion,
+					selectedPrefix: paintSuggestion,
+					selectedText: paintSuggestion,
 				},
 			},
 			keybindings,
 			(text) => ctx.ui.theme.fg("text", text),
 			(text) => ctx.ui.theme.fg("borderMuted", text),
-			claudeSuggestion,
+			paintSuggestion,
 			() => new Set([...PI_BUILTIN_COMMAND_NAMES, ...pi.getCommands().map((command) => command.name)]),
 		)
 	);

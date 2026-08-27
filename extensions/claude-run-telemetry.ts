@@ -135,6 +135,8 @@ export class ClaudeRunTelemetry {
 			false,
 			this.thinkingActive ? this.context.thinkingLevel : undefined,
 		);
-		this.context.ui.setWorkingMessage(formatAnimatedWorkingMessage(message, elapsedMs));
+		this.context.ui.setWorkingMessage(
+			formatAnimatedWorkingMessage(message, elapsedMs, this.context.ui.theme),
+		);
 	}
 }

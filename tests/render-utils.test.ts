@@ -91,12 +91,23 @@ describe("run metrics formatting", () => {
 });
 
 describe("Claude working color animation", () => {
-	it("uses exact dark-theme Claude and shimmer RGB values", () => {
-		const message = formatAnimatedWorkingMessage("Precipitating… (3s)", 3_000);
-		assert.equal(stripAnsi(message), "Precipitating… (3s)");
-		assert.ok(message.includes("\x1b[38;2;215;119;87m"));
-		assert.ok(message.includes("\x1b[38;2;235;159;127m"));
-		assert.ok(message.includes("\x1b[38;2;153;153;153m"));
+	it("uses theme semantics for Claude, shimmer, and inactive text", () => {
+		const calls: Array<{ color: string; text: string }> = [];
+		const theme: Parameters<typeof formatAnimatedWorkingMessage>[2] = {
+			fg(color, text) {
+				calls.push({ color, text });
+				return `<${color}>${text}</${color}>`;
+			},
+		};
+		const message = formatAnimatedWorkingMessage("Precipitating… (3s)", 3_000, theme);
+		assert.equal(stripAnsi(message), message);
+		assert.deepEqual(calls.map(({ color }) => color), [
+			"accent",
+			"thinkingXhigh",
+			"accent",
+			"muted",
+		]);
+		assert.equal(calls.map(({ text }) => text).join(""), "Precipitating… (3s)");
 	});
 });
 

@@ -9,9 +9,10 @@
     "yellow": "#ffc107",
     "text": "#ffffff",
     "gray": "#999999",
-    "dimGray": "#999999",
     "darkGray": "#505050",
     "accent": "#d77757",
+    "claudeShimmer": "#eb9f7f",
+    "bashBorder": "#fd5db1",
     "selectedBg": "#2c323e",
     "userMsgBg": "#373737",
     "toolPendingBg": "#373741",
@@ -29,7 +30,7 @@
     "error": "red",
     "warning": "yellow",
     "muted": "gray",
-    "dim": "dimGray",
+    "dim": "darkGray",
     "text": "text",
     "thinkingText": "gray",
     "selectedBg": "selectedBg",
@@ -73,9 +74,9 @@
     "thinkingLow": "blue",
     "thinkingMedium": "blue",
     "thinkingHigh": "accent",
-    "thinkingXhigh": "#eb9f7f",
-    "thinkingMax": "#eb9f7f",
-    "bashMode": "green"
+    "thinkingXhigh": "claudeShimmer",
+    "thinkingMax": "claudeShimmer",
+    "bashMode": "bashBorder"
   },
   "export": {
     "pageBg": "#18181e",

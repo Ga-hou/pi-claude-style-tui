@@ -7,7 +7,7 @@ import {
 	type ExtensionContext,
 } from "@earendil-works/pi-coding-agent";
 import { Key, matchesKey, truncateToWidth, type Component } from "@earendil-works/pi-tui";
-import { claudeSuggestion, formatCwd, formatDuration } from "./render-utils.ts";
+import { formatCwd, formatDuration } from "./render-utils.ts";
 
 export const STATUS_LINE_ITEM_IDS = [
 	"model",
@@ -201,7 +201,7 @@ export function renderStatusLine(
 			: `${modelName} • ${thinkingLevel}`
 		: modelName;
 	const values: Record<StatusLineItemId, string | undefined> = {
-		model: claudeSuggestion(modelDisplay),
+		model: theme.fg("customMessageLabel", modelDisplay),
 		context: renderContext(source, theme),
 		directory: theme.fg("success", `${formatCwd(source.cwd)}${branch ? ` (${branch})` : ""}`),
 		cache: totals.cacheRead > 0 || totals.cacheWrite > 0
