@@ -1,6 +1,6 @@
 {
   "name": "pi-claude-style-tui",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "A Claude Code-inspired TUI for Pi with per-run elapsed time and token telemetry.",
   "type": "module",
   "keywords": [
