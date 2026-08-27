@@ -15,7 +15,6 @@ import {
 	center,
 	claudeSubtle,
 	claudeSuggestion,
-	claudeWarning,
 	formatCwd,
 	formatAnimatedWorkingMessage,
 	formatDuration,
@@ -32,13 +31,21 @@ import {
 	padRight,
 } from "./render-utils.ts";
 import { addAssistantResponseMarker, registerClaudeToolRenderers } from "./claude-message-ui.ts";
+import {
+	DEFAULT_STATUS_LINE_ITEMS,
+	loadStatusLineItems,
+	renderStatusLine,
+	saveStatusLineItems,
+	showStatusLineSetup,
+	type StatusLineItemId,
+} from "./claude-status-line.ts";
 
 const LOGO_CELL = "███";
 const LOGO_ANIMATION_INTERVAL_MS = 120;
 const PI_BUILTIN_COMMAND_NAMES = [
 	"settings", "model", "tree", "thinking", "scoped-models", "export", "import", "share", "copy",
 	"name", "session", "changelog", "hotkeys", "fork", "clone", "trust", "login", "logout", "new",
-	"compact", "resume", "reload", "quit",
+	"compact", "resume", "reload", "quit", "statusline",
 ] as const;
 
 type LogoColor = "panel" | "cyan" | "red" | "green" | "orange" | "white" | "flash" | "brand";
@@ -305,6 +312,7 @@ let completedResponseLength = 0;
 let streamingResponseLength = 0;
 let thinkingActive = false;
 let workingVerb = "Thinking";
+let statusLineItems: StatusLineItemId[] = [...DEFAULT_STATUS_LINE_ITEMS];
 
 function getResponseLength(message: { content: unknown }): number {
 	if (!Array.isArray(message.content)) return 0;
@@ -387,6 +395,30 @@ function disposeActiveHeader(): void {
 	activePiStartupHeader = undefined;
 }
 
+function applyClaudeFooter(pi: ExtensionAPI, ctx: ExtensionContext): void {
+	ctx.ui.setFooter((tui, theme, footerData) => {
+		const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
+		return {
+			dispose: unsubscribe,
+			invalidate() {},
+			render(width: number): string[] {
+				const statusLine = renderStatusLine(
+					statusLineItems,
+					ctx,
+					theme,
+					footerData.getGitBranch(),
+					pi.getThinkingLevel(),
+				);
+				const statuses = [...footerData.getExtensionStatuses().values()].filter(Boolean).join(" · ");
+				return [
+					...(statusLine ? [truncateToWidth(statusLine, width, "…")] : []),
+					...(statuses ? [truncateToWidth(theme.fg("dim", statuses), width, "…")] : []),
+				];
+			},
+		};
+	});
+}
+
 function applyPiLook(pi: ExtensionAPI, ctx: ExtensionContext): void {
 	if (ctx.mode !== "tui") return;
 
@@ -398,28 +430,7 @@ function applyPiLook(pi: ExtensionAPI, ctx: ExtensionContext): void {
 		activePiStartupHeader = new PiStartupHeader(pi, ctx, tui);
 		return activePiStartupHeader;
 	});
-	ctx.ui.setFooter((tui, theme, footerData) => {
-		const unsubscribe = footerData.onBranchChange(() => tui.requestRender());
-		return {
-			dispose: unsubscribe,
-			invalidate() {},
-			render(width: number): string[] {
-				const model = claudeSuggestion(ctx.model?.id ?? "no model");
-				const usage = ctx.getContextUsage();
-				const context = usage && usage.percent !== null
-					? `ctx ${Math.round(usage.percent)}%/${formatTokenCount(usage.contextWindow)}`
-					: `ctx ?/${formatTokenCount(ctx.model?.contextWindow ?? 0)}`;
-				const branch = footerData.getGitBranch();
-				const location = theme.fg("success", `${formatCwd(ctx.cwd)}${branch ? ` (${branch})` : ""}`);
-				const separator = theme.fg("dim", "|");
-				const top = truncateToWidth(`${model} ${separator} ${claudeWarning(context)} ${separator} ${location}`, width, "…");
-				const statuses = [...footerData.getExtensionStatuses().values()].filter(Boolean).join(" · ");
-				const mode = `${formatThinkingLabel(pi.getThinkingLevel())} mode`;
-				const bottom = truncateToWidth(theme.fg("dim", statuses ? `${mode} · ${statuses}` : `${mode} · /hotkeys for shortcuts`), width, "…");
-				return [top, bottom];
-			},
-		};
-	});
+	applyClaudeFooter(pi, ctx);
 	ctx.ui.setWorkingIndicator({
 		frames: getClaudeSpinnerFrames().map(brand),
 		intervalMs: 120,
@@ -474,8 +485,14 @@ export default function (pi: ExtensionAPI) {
 		return new Text(theme.fg("dim", `✻ ${summary}`), 1, 0);
 	});
 
-	pi.on("session_start", (_event, ctx) => {
+	pi.on("session_start", async (_event, ctx) => {
 		if (ctx.mode === "tui") registerClaudeToolRenderers(pi, ctx.cwd);
+		try {
+			statusLineItems = await loadStatusLineItems();
+		} catch (error) {
+			statusLineItems = [...DEFAULT_STATUS_LINE_ITEMS];
+			ctx.ui.notify(`Could not load status line config: ${(error as Error).message}`, "warning");
+		}
 		schedulePiLook(pi, ctx);
 	});
 
@@ -542,6 +559,27 @@ export default function (pi: ExtensionAPI) {
 		disposeActiveHeader();
 		if (previousTheme && ctx.mode === "tui") ctx.ui.setTheme(previousTheme);
 		previousTheme = undefined;
+	});
+
+	pi.registerCommand("statusline", {
+		description: "Configure Claude-style footer items and order",
+		handler: async (_args, ctx) => {
+			if (ctx.mode !== "tui") {
+				ctx.ui.notify("/statusline requires TUI mode", "error");
+				return;
+			}
+			const selected = await showStatusLineSetup(ctx, statusLineItems);
+			if (selected === null) return;
+			try {
+				await saveStatusLineItems(selected);
+			} catch (error) {
+				ctx.ui.notify(`Could not save status line config: ${(error as Error).message}`, "error");
+				return;
+			}
+			statusLineItems = selected;
+			if (claudeLookEnabled) applyClaudeFooter(pi, ctx);
+			ctx.ui.notify(selected.length > 0 ? "Status line updated" : "Status line hidden", "info");
+		},
 	});
 
 	pi.registerCommand("use-claude-style-tui", {

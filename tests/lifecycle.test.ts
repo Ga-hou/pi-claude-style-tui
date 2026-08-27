@@ -14,6 +14,7 @@ function createHarness() {
 	const workingMessages: Array<string | undefined> = [];
 	const workingVisibility: boolean[] = [];
 	let markdownTransformer: ((markdown: string, context: any) => string) | undefined;
+	let footerFactory: ((tui: any, theme: any, footerData: any) => { render(width: number): string[] }) | undefined;
 	let idle = true;
 
 	const ui = {
@@ -26,7 +27,9 @@ function createHarness() {
 		},
 		setTitle() {},
 		setHeader() {},
-		setFooter() {},
+		setFooter(factory?: typeof footerFactory) {
+			footerFactory = factory;
+		},
 		setWorkingIndicator() {},
 		setWorkingVisible(visible: boolean) {
 			workingVisibility.push(visible);
@@ -41,8 +44,18 @@ function createHarness() {
 	const ctx = {
 		mode: "tui",
 		cwd: "/tmp/project",
-		model: { id: "test-model", contextWindow: 100_000 },
+		model: { id: "test-model", provider: "test", contextWindow: 100_000, reasoning: true },
+		modelRegistry: {
+			isUsingOAuth: () => false,
+			getProvider: () => undefined,
+		},
 		thinkingLevel: "xhigh",
+		sessionManager: {
+			getEntries: () => [],
+			getSessionName: () => undefined,
+			getSessionId: () => "session-123",
+			getSessionFile: () => "/tmp/session.jsonl",
+		},
 		ui,
 		getContextUsage: () => undefined,
 		isIdle: () => idle,
@@ -72,6 +85,18 @@ function createHarness() {
 		entries,
 		workingMessages,
 		workingVisibility,
+		renderFooter(width = 120) {
+			if (!footerFactory) return [];
+			return footerFactory(
+				{ requestRender() {} },
+				ui.theme,
+				{
+					onBranchChange: () => () => {},
+					getGitBranch: () => "main",
+					getExtensionStatuses: () => new Map(),
+				},
+			).render(width);
+		},
 		transformMarkdown(markdown: string, context: any) {
 			return markdownTransformer?.(markdown, context) ?? markdown;
 		},
@@ -96,6 +121,14 @@ describe("TUI lifecycle", () => {
 
 		assert.deepEqual(harness.workingMessages, []);
 		assert.deepEqual(harness.entries, []);
+	});
+
+	it("shows thinking with the model and omits the hotkeys footer hint", async () => {
+		const harness = createHarness();
+		await harness.commands.get("use-claude-style-tui")!.handler("", harness.ctx);
+		const footer = harness.renderFooter().join("\n");
+		assert.match(footer, /test-model • medium/);
+		assert.doesNotMatch(footer, /hotkeys|medium mode/);
 	});
 
 	it("shows the assistant dot only after streaming settles", async () => {

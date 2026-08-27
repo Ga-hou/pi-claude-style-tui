@@ -23,7 +23,8 @@ pi install /path/to/checkout
 - Straight input separators and `❯` prompt markers
 - Safe `●` markers for prose-first Assistant responses without breaking block Markdown
 - Compact `● Tool(args)` / `└ result` rows for Pi-owned built-in tools, with expandable output
-- Two-line footer with model, context, cwd, branch, and thinking mode
+- Configurable footer with ordered Claude/Pi fields for model, context, workspace, session, usage, cache, cost, and duration
+- Pi-compatible context alerts (`>70%` warning, `>90%` error), cache totals, and session cost
 - Claude-style spinner verbs, mirrored `✻` working-glyph animation, delayed elapsed time, and estimated output-token count
 - Persistent `<verb> for <duration>` turn summaries
 - Slash-command highlighting
@@ -44,6 +45,8 @@ pi -e .
 
 ## Commands
 
+- `/statusline` — toggle and reorder footer fields (`Space`, `←/→`, `Enter`); saves to `~/.pi/agent/claude-code-tui.json`
+  - Fields: model, context, directory, cache, cost, session name/ID, transcript path, version, context remaining/window, input/output tokens, duration, and >200k warning
 - `/use-claude-style-tui` — enable the custom TUI
 - `/use-default-tui` — restore Pi's built-in TUI
 
