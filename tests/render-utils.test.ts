@@ -8,6 +8,7 @@ import {
 	applyStraightEditorBorders,
 	findBottomBorderIndex,
 	formatAnimatedWorkingMessage,
+	formatClaudeTerminalTitle,
 	formatCwd,
 	formatDuration,
 	formatModelLabel,
@@ -99,6 +100,13 @@ describe("run metrics formatting", () => {
 			formatWorkingMessage("Crafting", 30_001, 5_000, false, "xhigh"),
 			"Crafting… (30s · ↓ 1.3k tokens · thinking with xhigh effort)",
 		);
+	});
+
+	it("matches Claude's terminal title frames", () => {
+		assert.equal(formatClaudeTerminalTitle("project", false), "✳ project");
+		assert.equal(formatClaudeTerminalTitle("project", true, 0), "⠂ project");
+		assert.equal(formatClaudeTerminalTitle("project", true, 960), "⠐ project");
+		assert.equal(formatClaudeTerminalTitle("project", true, 960, true), "✳ project");
 	});
 
 	it("shows only the completed turn duration", () => {

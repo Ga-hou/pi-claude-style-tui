@@ -3,10 +3,14 @@ import { truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
 
 type RenderTheme = Pick<ExtensionContext["ui"]["theme"], "fg">;
 
-/** Strip CSI SGR and APC sequences so border detection can inspect plain text. */
+/** Strip CSI SGR, APC, and OSC 8 sequences so layout code can inspect plain text. */
 export function stripAnsi(text: string): string {
 	// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI control bytes are the intended match.
-	return text.replace(/\x1b\[[0-9;]*m/g, "").replace(/\x1b_[^\x07]*\x07/g, "");
+	const withoutSgr = text.replace(/\x1b\[[0-9;]*m/g, "");
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI control bytes are the intended match.
+	const withoutApc = withoutSgr.replace(/\x1b_[^\x07]*\x07/g, "");
+	// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI control bytes are the intended match.
+	return withoutApc.replace(/\x1b\]8;;[^\x07]*\x07/g, "");
 }
 
 export function formatCwd(cwd: string, home = process.env.HOME): string {
@@ -101,6 +105,17 @@ export function formatWorkingMessage(
 
 export function formatRunSummary(milliseconds: number, verb = "Worked"): string {
 	return `${verb} for ${formatDuration(milliseconds)}`;
+}
+
+export function formatClaudeTerminalTitle(
+	title: string,
+	active: boolean,
+	elapsedMs = 0,
+	reducedMotion = false,
+): string {
+	if (!active || reducedMotion) return `✳ ${title}`;
+	const frames = ["⠂", "⠐"] as const;
+	return `${frames[Math.floor(Math.max(0, elapsedMs) / 960) % frames.length]} ${title}`;
 }
 
 export type WorkingAnimationMode = "requesting" | "thinking" | "responding" | "tool-use";

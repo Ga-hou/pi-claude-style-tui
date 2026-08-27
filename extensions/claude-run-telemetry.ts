@@ -1,8 +1,10 @@
+import { basename } from "node:path";
 import type { ExtensionContext } from "@earendil-works/pi-coding-agent";
 import {
 	advanceAnimatedResponseLength,
 	advanceStalledIntensity,
 	formatAnimatedWorkingMessage,
+	formatClaudeTerminalTitle,
 	formatWorkingMessage,
 	getStreamDeltaLength,
 	pickCompletionVerb,
@@ -60,15 +62,17 @@ export class ClaudeRunTelemetry {
 	private reducedMotion = false;
 	private lastProgressAt = 0;
 	private stalledIntensity = 0;
+	private lastTerminalTitle: string | undefined;
 	private readonly activeToolCalls = new Set<string>();
 
 	setReducedMotion(reducedMotion: boolean): void {
 		if (this.reducedMotion === reducedMotion) return;
 		this.reducedMotion = reducedMotion;
 		if (reducedMotion) this.displayedResponseLength = this.targetResponseLength;
-		if (this.startedAt !== undefined && this.workingVisible) {
+		if (this.startedAt !== undefined) {
 			this.clearTimer();
 			this.startTimer();
+			this.updateTerminalTitle(true, Date.now() - this.startedAt);
 			this.updateWorkingMessage();
 		}
 	}
@@ -94,7 +98,9 @@ export class ClaudeRunTelemetry {
 		this.workingVerb = pickWorkingVerb();
 		this.lastProgressAt = this.startedAt;
 		this.stalledIntensity = 0;
+		this.lastTerminalTitle = undefined;
 		this.activeToolCalls.clear();
+		this.updateTerminalTitle(true, 0);
 		this.setWorkingVisibility(ctx, true);
 		this.updateWorkingMessage();
 	}
@@ -102,6 +108,7 @@ export class ClaudeRunTelemetry {
 	stop(ctx?: ExtensionContext): RunMetricsEntry | undefined {
 		this.clearTimer();
 		const activeContext = this.context ?? ctx;
+		this.updateTerminalTitle(false, 0, activeContext);
 		if (activeContext?.mode === "tui") {
 			activeContext.ui.setWorkingMessage(undefined);
 			activeContext.ui.setWorkingVisible(true);
@@ -128,6 +135,7 @@ export class ClaudeRunTelemetry {
 		this.mode = "requesting";
 		this.lastProgressAt = 0;
 		this.stalledIntensity = 0;
+		this.lastTerminalTitle = undefined;
 		this.activeToolCalls.clear();
 		return metrics;
 	}
@@ -224,10 +232,20 @@ export class ClaudeRunTelemetry {
 		this.refreshTimer = undefined;
 	}
 
+	private updateTerminalTitle(active: boolean, elapsedMs: number, ctx = this.context): void {
+		if (ctx?.mode !== "tui") return;
+		const title = ctx.sessionManager.getSessionName() || basename(ctx.cwd) || "Pi";
+		const next = formatClaudeTerminalTitle(title, active, elapsedMs, this.reducedMotion);
+		if (next === this.lastTerminalTitle) return;
+		this.lastTerminalTitle = next;
+		ctx.ui.setTitle(next);
+	}
+
 	private updateWorkingMessage(advanceFrame = false): void {
 		if (this.context?.mode !== "tui" || this.startedAt === undefined || !this.workingVisible) return;
 		const now = Date.now();
 		const elapsedMs = now - this.startedAt;
+		this.updateTerminalTitle(true, elapsedMs);
 		this.targetResponseLength = Math.max(
 			this.targetResponseLength,
 			this.completedResponseLength + this.streamingResponseLength,

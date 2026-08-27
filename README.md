@@ -7,13 +7,13 @@ A Pi package that provides a Claude Code-inspired header, editor, footer, theme,
 Install the package from npm:
 
 ```bash
-pi install npm:pi-claude-style-tui@1.0.0
+pi install npm:pi-claude-style-tui
 ```
 
 To try it without adding it to your Pi settings:
 
 ```bash
-pi -e npm:pi-claude-style-tui@1.0.0
+pi -e npm:pi-claude-style-tui
 ```
 
 Update or remove the package:
@@ -66,6 +66,7 @@ npm publish --access public
 
 - `/exit` — exit Pi; equivalent to `/quit`
 - `/statusline` — toggle and reorder footer fields (`Space`, `←/→`, `Enter`); saves to `~/.pi/agent/claude-code-tui.json`
+- `/context` — show a Claude-style context usage bar
 - `/reduced-motion [on|off]` — disable shimmer and use a static working indicator; saves to the same config file
   - Fields: model, context, directory, cache, cost, session name/ID, transcript path, version, context remaining/window, input/output tokens, duration, and >200k warning
 

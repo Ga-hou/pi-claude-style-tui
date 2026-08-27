@@ -1,10 +1,17 @@
+import { basename } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
 import { loadReducedMotion, saveReducedMotion } from "./claude-config.ts";
-import { applyClaudeEditor } from "./claude-editor.ts";
+import { showClaudeContext } from "./claude-context.ts";
+import { applyClaudeEditor, disposeClaudeEditor, setClaudeEditorLoading } from "./claude-editor.ts";
 import { applyClaudeFooter } from "./claude-footer.ts";
 import { PiStartupHeader } from "./claude-header.ts";
-import { addAssistantResponseMarker, registerClaudeToolRenderers } from "./claude-message-ui.ts";
+import {
+	addAssistantResponseMarker,
+	registerClaudeToolRenderers,
+	trackClaudeToolEnd,
+	trackClaudeToolStart,
+} from "./claude-message-ui.ts";
 import { ClaudeRunTelemetry, type RunMetricsEntry } from "./claude-run-telemetry.ts";
 import {
 	DEFAULT_STATUS_LINE_ITEMS,
@@ -13,7 +20,12 @@ import {
 	saveStatusLineItems,
 	showStatusLineSetup,
 } from "./claude-status-line.ts";
-import { addUserPromptMarker, formatRunSummary, getClaudeSpinnerFrames } from "./render-utils.ts";
+import {
+	addUserPromptMarker,
+	formatClaudeTerminalTitle,
+	formatRunSummary,
+	getClaudeSpinnerFrames,
+} from "./render-utils.ts";
 
 let activeHeader: PiStartupHeader | undefined;
 let previousTheme: ExtensionContext["ui"]["theme"] | undefined;
@@ -45,7 +57,7 @@ function applyClaudeLook(pi: ExtensionAPI, ctx: ExtensionContext): void {
 	previousTheme ??= ctx.ui.theme;
 	ctx.ui.setTheme("claude-code-dark");
 	paintUserPromptMarker = (text) => ctx.ui.theme.fg("dim", text);
-	ctx.ui.setTitle("Pi");
+	ctx.ui.setTitle(formatClaudeTerminalTitle(ctx.sessionManager.getSessionName() || basename(ctx.cwd) || "Pi", false));
 	ctx.ui.setHeader((tui) => {
 		disposeHeader();
 		activeHeader = new PiStartupHeader(pi, ctx, tui);
@@ -87,6 +99,10 @@ export default function (pi: ExtensionAPI) {
 		return markdown;
 	});
 
+	pi.registerEntryRenderer("claude-interrupted", (_entry, _options, theme) => {
+		return new Text(theme.fg("dim", "Interrupted · What should Pi do instead?"), 1, 0);
+	});
+
 	pi.registerEntryRenderer("claude-run-metrics", (entry, _options, theme) => {
 		const metrics = entry.data as RunMetricsEntry;
 		const summary = formatRunSummary(metrics.durationMs, metrics.completionVerb);
@@ -112,6 +128,7 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("before_agent_start", (_event, ctx) => {
+		setClaudeEditorLoading(true);
 		telemetry.start(ctx, true);
 	});
 
@@ -129,10 +146,12 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_execution_start", (event, ctx) => {
+		trackClaudeToolStart(event.toolCallId);
 		telemetry.onToolStart(event.toolCallId, ctx);
 	});
 
 	pi.on("tool_execution_end", (event) => {
+		trackClaudeToolEnd(event.toolCallId);
 		telemetry.onToolEnd(event.toolCallId);
 	});
 
@@ -141,8 +160,16 @@ export default function (pi: ExtensionAPI) {
 		telemetry.onMessageEnd(event.message);
 	});
 
+	pi.on("turn_end", (event, ctx) => {
+		const message = event.message as { role?: string; stopReason?: string };
+		if (ctx.mode === "tui" && message.role === "assistant" && message.stopReason === "aborted") {
+			pi.appendEntry("claude-interrupted", {});
+		}
+	});
+
 	pi.on("agent_settled", (_event, ctx) => {
 		if (!ctx.isIdle()) return;
+		setClaudeEditorLoading(false);
 		const metrics = telemetry.stop(ctx);
 		if (metrics && ctx.mode === "tui") pi.appendEntry("claude-run-metrics", metrics);
 	});
@@ -151,6 +178,7 @@ export default function (pi: ExtensionAPI) {
 		sessionGeneration++;
 		cancelStartupTimer();
 		telemetry.stop(ctx);
+		disposeClaudeEditor();
 		disposeHeader();
 		restorePreviousTheme(ctx);
 	});
@@ -184,6 +212,13 @@ export default function (pi: ExtensionAPI) {
 			telemetry.setReducedMotion(reducedMotion);
 			applyWorkingIndicator(ctx);
 			ctx.ui.notify(`Reduced motion ${reducedMotion ? "enabled" : "disabled"}`, "info");
+		},
+	});
+
+	pi.registerCommand("context", {
+		description: "Show Claude-style context usage",
+		handler: async (_args, ctx) => {
+			await showClaudeContext(ctx);
 		},
 	});
 

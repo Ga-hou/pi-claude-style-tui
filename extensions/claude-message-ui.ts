@@ -1,3 +1,6 @@
+import { homedir } from "node:os";
+import { isAbsolute, relative, resolve, sep } from "node:path";
+import { pathToFileURL } from "node:url";
 import {
 	createBashToolDefinition,
 	createEditToolDefinition,
@@ -10,16 +13,34 @@ import {
 	keyHint,
 	type Theme,
 } from "@earendil-works/pi-coding-agent";
-import { Text } from "@earendil-works/pi-tui";
+import { type Component, Text, truncateToWidth, visibleWidth } from "@earendil-works/pi-tui";
+import { formatDuration } from "./render-utils.ts";
 
 const MAX_SUMMARY_CHARS = 120;
 const MAX_EXPANDED_LINES = 30;
 
 type RenderContext = {
+	toolCallId?: string;
 	executionStarted: boolean;
 	isError: boolean;
 	isPartial: boolean;
+	args?: unknown;
 };
+
+type CallDetail = {
+	plain: string;
+	render: (maxWidth: number) => string;
+};
+
+const toolStartedAt = new Map<string, number>();
+
+export function trackClaudeToolStart(toolCallId: string): void {
+	toolStartedAt.set(toolCallId, Date.now());
+}
+
+export function trackClaudeToolEnd(toolCallId: string): void {
+	toolStartedAt.delete(toolCallId);
+}
 
 type TextResult = {
 	content: Array<{ type: string; text?: string }>;
@@ -27,7 +48,11 @@ type TextResult = {
 };
 
 function singleLine(text: string, maxLength = MAX_SUMMARY_CHARS): string {
-	const compact = text.replace(/\s+/g, " ").trim();
+	const sanitized = Array.from(text, (character) => {
+		const code = character.charCodeAt(0);
+		return code < 32 || code === 127 ? " " : character;
+	}).join("");
+	const compact = sanitized.replace(/\s+/g, " ").trim();
 	return compact.length > maxLength ? `${compact.slice(0, maxLength - 1)}…` : compact;
 }
 
@@ -63,10 +88,89 @@ export function addAssistantResponseMarker(markdown: string, marker = "●"): st
 	return `${marker} ${markdown}`;
 }
 
-function renderCall(label: string, detail: string, theme: Theme, context: RenderContext): Text {
-	const dotColor = context.isError ? "error" : context.executionStarted && !context.isPartial ? "success" : "accent";
-	const suffix = detail ? theme.fg("muted", `(${singleLine(detail)})`) : "";
-	return new Text(`${theme.fg(dotColor, "●")} ${theme.fg("toolTitle", theme.bold(label))}${suffix}`, 1, 0);
+export function formatToolPath(path: string, cwd: string): string {
+	const absolute = isAbsolute(path) ? path : resolve(cwd, path);
+	const fromCwd = relative(cwd, absolute);
+	if (!fromCwd) return ".";
+	if (fromCwd !== ".." && !fromCwd.startsWith(`..${sep}`) && !isAbsolute(fromCwd)) return fromCwd;
+	const fromHome = relative(homedir(), absolute);
+	if (!fromHome) return "~";
+	if (fromHome !== ".." && !fromHome.startsWith(`..${sep}`) && !isAbsolute(fromHome)) return `~/${fromHome}`;
+	return absolute;
+}
+
+export function fileHyperlink(path: string, cwd: string, label: string): string {
+	const absolute = isAbsolute(path) ? path : resolve(cwd, path);
+	return `\x1b]8;;${pathToFileURL(absolute).href}\x07${singleLine(label, Number.MAX_SAFE_INTEGER)}\x1b]8;;\x07`;
+}
+
+function textDetail(detail: string, theme: Theme): CallDetail {
+	const plain = singleLine(detail);
+	return {
+		plain,
+		render: (maxWidth) => theme.fg("muted", truncateToWidth(plain, maxWidth, "…")),
+	};
+}
+
+function pathDetail(path: string, cwd: string, theme: Theme): CallDetail {
+	const plain = singleLine(formatToolPath(path, cwd));
+	return {
+		plain,
+		render(maxWidth) {
+			const display = truncateToWidth(plain, maxWidth, "…");
+			return theme.fg("muted", fileHyperlink(path, cwd, display));
+		},
+	};
+}
+
+function searchDetail(pattern: string, path: string | undefined, cwd: string, theme: Theme): CallDetail {
+	const query = singleLine(quote(pattern));
+	if (!path) return textDetail(query, theme);
+	const displayPath = singleLine(formatToolPath(path, cwd));
+	const prefix = `${query} in `;
+	const plain = `${prefix}${displayPath}`;
+	return {
+		plain,
+		render(maxWidth) {
+			const pathWidth = maxWidth - visibleWidth(prefix);
+			if (pathWidth < 4) return theme.fg("muted", truncateToWidth(plain, maxWidth, "…"));
+			const display = truncateToWidth(displayPath, pathWidth, "…");
+			return `${theme.fg("muted", prefix)}${theme.fg("muted", fileHyperlink(path, cwd, display))}`;
+		},
+	};
+}
+
+class ResponsiveToolCall implements Component {
+	private readonly label: string;
+	private readonly detail: CallDetail | undefined;
+	private readonly theme: Theme;
+	private readonly context: RenderContext;
+
+	constructor(label: string, detail: CallDetail | undefined, theme: Theme, context: RenderContext) {
+		this.label = label;
+		this.detail = detail;
+		this.theme = theme;
+		this.context = context;
+	}
+
+	render(width: number): string[] {
+		const dotColor = this.context.isError
+			? "error"
+			: this.context.executionStarted && !this.context.isPartial
+				? "success"
+				: "accent";
+		const prefix = `${this.theme.fg(dotColor, "●")} ${this.theme.fg("toolTitle", this.theme.bold(this.label))}`;
+		const available = Math.max(0, width - visibleWidth(prefix) - 4);
+		const suffix = this.detail && available >= 4 ? `(${this.detail.render(available - 2)})` : "";
+		return new Text(`${prefix}${suffix}`, 1, 0).render(width);
+	}
+
+	invalidate(): void {}
+}
+
+function renderCall(label: string, detail: string | CallDetail, theme: Theme, context: RenderContext): Component {
+	const normalized = typeof detail === "string" ? textDetail(detail, theme) : detail;
+	return new ResponsiveToolCall(label, normalized.plain ? normalized : undefined, theme, context);
 }
 
 function renderResult(
@@ -75,11 +179,11 @@ function renderResult(
 	theme: Theme,
 	context: RenderContext,
 	summary: (output: string) => string,
+	partialSummary: (output: string) => string = (output) => singleLine(output) || "Working…",
 ): Text {
 	const output = resultText(result);
 	if (options.isPartial) {
-		const progress = singleLine(output) || "Working…";
-		return new Text(theme.fg("dim", `  └ ${progress}`), 1, 0);
+		return new Text(theme.fg("dim", `  └ ${partialSummary(output)}`), 1, 0);
 	}
 
 	const isError = context.isError;
@@ -106,6 +210,43 @@ function lineSummary(noun: string, output: string): string {
 	return count > 0 ? `${noun} ${count} ${count === 1 ? "line" : "lines"}` : "Done";
 }
 
+export function editSummary(details: unknown): string {
+	const patch = (details as { patch?: unknown } | undefined)?.patch;
+	if (typeof patch !== "string") return "Updated";
+	let added = 0;
+	let removed = 0;
+	for (const line of patch.split("\n")) {
+		if (line.startsWith("+") && !line.startsWith("+++")) added++;
+		else if (line.startsWith("-") && !line.startsWith("---")) removed++;
+	}
+	if (added === 0 && removed === 0) return "Updated";
+	const parts = [
+		...(added > 0 ? [`Added ${added} ${added === 1 ? "line" : "lines"}`] : []),
+		...(removed > 0 ? [`removed ${removed} ${removed === 1 ? "line" : "lines"}`] : []),
+	];
+	return parts.join(", ");
+}
+
+export function writeSummary(content: unknown): string {
+	if (typeof content !== "string") return "Written";
+	const lines = content.split("\n");
+	while (lines.at(-1) === "") lines.pop();
+	return `Wrote ${lines.length} ${lines.length === 1 ? "line" : "lines"}`;
+}
+
+export function bashProgressSummary(output: string, elapsedMs: number): string {
+	const lines = nonEmptyLineCount(output);
+	if (elapsedMs < 2_000) {
+		let latest = "";
+		for (const line of output.split("\n")) {
+			if (line.trim()) latest = line;
+		}
+		return singleLine(latest) || "Working…";
+	}
+	const parts = [formatDuration(elapsedMs), ...(lines > 0 ? [`${lines} ${lines === 1 ? "line" : "lines"}`] : [])];
+	return `Running… (${parts.join(" · ")})`;
+}
+
 /** Register compact render-only overrides for Pi-owned local built-in tools. */
 export function registerClaudeToolRenderers(pi: ExtensionAPI, cwd: string): void {
 	const piOwnedTools = new Set(
@@ -120,7 +261,7 @@ export function registerClaudeToolRenderers(pi: ExtensionAPI, cwd: string): void
 		pi.registerTool({
 			...tool,
 			renderShell: "self",
-			renderCall: (args, theme, context) => renderCall("Read", args.path, theme, context),
+			renderCall: (args, theme, context) => renderCall("Read", pathDetail(args.path, cwd, theme), theme, context),
 			renderResult(result, options, theme, context) {
 				if ((options.expanded || result.content[0]?.type === "image") && tool.renderResult) {
 					return tool.renderResult(result, options, theme, context);
@@ -138,7 +279,15 @@ export function registerClaudeToolRenderers(pi: ExtensionAPI, cwd: string): void
 			renderCall: (args, theme, context) => renderCall("Bash", args.command, theme, context),
 			renderResult(result, options, theme, context) {
 				if (options.expanded && tool.renderResult) return tool.renderResult(result, options, theme, context);
-				return renderResult(result, options, theme, context, (output) => lineSummary("Returned", output));
+				const startedAt = toolStartedAt.get(context.toolCallId);
+				return renderResult(
+					result,
+					options,
+					theme,
+					context,
+					(output) => lineSummary("Returned", output),
+					(output) => bashProgressSummary(output, startedAt === undefined ? 0 : Date.now() - startedAt),
+				);
 			},
 		});
 	}
@@ -148,10 +297,10 @@ export function registerClaudeToolRenderers(pi: ExtensionAPI, cwd: string): void
 		pi.registerTool({
 			...tool,
 			renderShell: "self",
-			renderCall: (args, theme, context) => renderCall("Edit", args.path, theme, context),
+			renderCall: (args, theme, context) => renderCall("Edit", pathDetail(args.path, cwd, theme), theme, context),
 			renderResult(result, options, theme, context) {
 				if (options.expanded && tool.renderResult) return tool.renderResult(result, options, theme, context);
-				return renderResult(result, options, theme, context, () => "Updated");
+				return renderResult(result, options, theme, context, () => editSummary(result.details));
 			},
 		});
 	}
@@ -161,10 +310,12 @@ export function registerClaudeToolRenderers(pi: ExtensionAPI, cwd: string): void
 		pi.registerTool({
 			...tool,
 			renderShell: "self",
-			renderCall: (args, theme, context) => renderCall("Write", args.path, theme, context),
+			renderCall: (args, theme, context) => renderCall("Write", pathDetail(args.path, cwd, theme), theme, context),
 			renderResult(result, options, theme, context) {
 				if (options.expanded && tool.renderResult) return tool.renderResult(result, options, theme, context);
-				return renderResult(result, options, theme, context, () => "Written");
+				return renderResult(result, options, theme, context, () =>
+					writeSummary((context.args as { content?: unknown } | undefined)?.content),
+				);
 			},
 		});
 	}
@@ -174,10 +325,8 @@ export function registerClaudeToolRenderers(pi: ExtensionAPI, cwd: string): void
 		pi.registerTool({
 			...tool,
 			renderShell: "self",
-			renderCall: (args, theme, context) => {
-				const location = args.path ? ` in ${args.path}` : "";
-				return renderCall("Grep", `${quote(args.pattern)}${location}`, theme, context);
-			},
+			renderCall: (args, theme, context) =>
+				renderCall("Grep", searchDetail(args.pattern, args.path, cwd, theme), theme, context),
 			renderResult(result, options, theme, context) {
 				if (options.expanded && tool.renderResult) return tool.renderResult(result, options, theme, context);
 				return renderResult(result, options, theme, context, (output) => lineSummary("Found", output));
@@ -190,10 +339,8 @@ export function registerClaudeToolRenderers(pi: ExtensionAPI, cwd: string): void
 		pi.registerTool({
 			...tool,
 			renderShell: "self",
-			renderCall: (args, theme, context) => {
-				const location = args.path ? ` in ${args.path}` : "";
-				return renderCall("Find", `${quote(args.pattern)}${location}`, theme, context);
-			},
+			renderCall: (args, theme, context) =>
+				renderCall("Find", searchDetail(args.pattern, args.path, cwd, theme), theme, context),
 			renderResult(result, options, theme, context) {
 				if (options.expanded && tool.renderResult) return tool.renderResult(result, options, theme, context);
 				return renderResult(result, options, theme, context, (output) => lineSummary("Found", output));
@@ -206,7 +353,8 @@ export function registerClaudeToolRenderers(pi: ExtensionAPI, cwd: string): void
 		pi.registerTool({
 			...tool,
 			renderShell: "self",
-			renderCall: (args, theme, context) => renderCall("List", args.path ?? ".", theme, context),
+			renderCall: (args, theme, context) =>
+				renderCall("List", pathDetail(args.path ?? ".", cwd, theme), theme, context),
 			renderResult(result, options, theme, context) {
 				if (options.expanded && tool.renderResult) return tool.renderResult(result, options, theme, context);
 				return renderResult(result, options, theme, context, (output) => lineSummary("Listed", output));

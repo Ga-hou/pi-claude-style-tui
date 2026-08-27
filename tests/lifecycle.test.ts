@@ -15,6 +15,7 @@ function createHarness() {
 	const entries: Array<{ type: string; data: unknown }> = [];
 	const workingMessages: Array<string | undefined> = [];
 	const workingVisibility: boolean[] = [];
+	const titles: string[] = [];
 	let markdownTransformer: ((markdown: string, context: any) => string) | undefined;
 	let selectedTheme: string | undefined;
 	let headerConfigured = false;
@@ -33,7 +34,9 @@ function createHarness() {
 			selectedTheme = theme;
 			return { success: true };
 		},
-		setTitle() {},
+		setTitle(title: string) {
+			titles.push(title);
+		},
 		setHeader() {
 			headerConfigured = true;
 		},
@@ -109,6 +112,7 @@ function createHarness() {
 		entries,
 		workingMessages,
 		workingVisibility,
+		titles,
 		getShutdownCalls: () => shutdownCalls,
 		getUiState: () => ({
 			selectedTheme,
@@ -152,6 +156,11 @@ describe("TUI lifecycle", () => {
 			workingIndicatorConfigured: true,
 		});
 		await harness.emit("session_shutdown");
+	});
+
+	it("registers the context view command", () => {
+		const harness = createHarness();
+		assert.ok(harness.commands.has("context"));
 	});
 
 	it("shows the assistant dot only after streaming settles", () => {
@@ -231,6 +240,19 @@ describe("TUI lifecycle", () => {
 			Date.now = originalNow;
 			await harness.emit("session_shutdown");
 		}
+	});
+
+	it("animates the terminal title while active and records interruptions", async () => {
+		const harness = createHarness();
+		await harness.emit("before_agent_start");
+		assert.equal(harness.titles.at(-1), "⠂ project");
+
+		await harness.emit("turn_end", { message: { role: "assistant", stopReason: "aborted" } });
+		assert.equal(harness.entries.at(-1)?.type, "claude-interrupted");
+
+		await harness.emit("agent_settled");
+		assert.equal(harness.titles.at(-1), "✳ project");
+		await harness.emit("session_shutdown");
 	});
 
 	it("does not settle a newer run started by another extension", async () => {
