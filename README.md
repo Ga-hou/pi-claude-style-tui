@@ -33,6 +33,7 @@ pi install /path/to/checkout
 
 ```bash
 npm install
+npm run check
 npm run typecheck
 npm test
 ```
