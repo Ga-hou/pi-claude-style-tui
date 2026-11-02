@@ -185,15 +185,19 @@ function boxedLine(content: string, width: number, paint: (text: string) => stri
 
 export class PiStartupHeader implements Component {
 	private frame = 0;
-	private readonly timer: NodeJS.Timeout;
+	private timer: NodeJS.Timeout | undefined;
 	private readonly pi: ExtensionAPI;
 	private readonly ctx: ExtensionContext;
 	private readonly tui: TUI;
 
-	constructor(pi: ExtensionAPI, ctx: ExtensionContext, tui: TUI) {
+	constructor(pi: ExtensionAPI, ctx: ExtensionContext, tui: TUI, reducedMotion = false) {
 		this.pi = pi;
 		this.ctx = ctx;
 		this.tui = tui;
+		if (reducedMotion) {
+			this.frame = LOGO_FRAMES.length - 1;
+			return;
+		}
 		this.timer = setInterval(() => {
 			if (this.frame < LOGO_FRAMES.length - 1) {
 				this.frame++;
@@ -238,7 +242,15 @@ export class PiStartupHeader implements Component {
 
 	invalidate(): void {}
 
+	setReducedMotion(reducedMotion: boolean): void {
+		if (!reducedMotion) return; // Do not replay a completed startup animation.
+		this.dispose();
+		this.frame = LOGO_FRAMES.length - 1;
+		this.tui.requestRender();
+	}
+
 	dispose(): void {
 		clearInterval(this.timer);
+		this.timer = undefined;
 	}
 }

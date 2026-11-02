@@ -158,6 +158,27 @@ describe("TUI lifecycle", () => {
 		await harness.emit("session_shutdown");
 	});
 
+	it("cancels pending initialization when the session shuts down", async () => {
+		const harness = createHarness();
+		const starting = harness.emit("session_start");
+		await harness.emit("session_shutdown");
+		await starting;
+		await new Promise((resolve) => setTimeout(resolve, 5));
+		assert.equal(harness.getUiState().headerConfigured, false);
+	});
+
+	it("does not install terminal UI in print or JSON modes", async () => {
+		for (const mode of ["print", "json"]) {
+			const harness = createHarness();
+			(harness.ctx as any).mode = mode;
+			await harness.emit("session_start");
+			await new Promise((resolve) => setTimeout(resolve, 5));
+			assert.equal(harness.getUiState().headerConfigured, false);
+			assert.equal(harness.getUiState().footerConfigured, false);
+			await harness.emit("session_shutdown");
+		}
+	});
+
 	it("registers the context view command", () => {
 		const harness = createHarness();
 		assert.ok(harness.commands.has("context"));

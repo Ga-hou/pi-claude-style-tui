@@ -247,6 +247,16 @@ export function bashProgressSummary(output: string, elapsedMs: number): string {
 	return `Running… (${parts.join(" · ")})`;
 }
 
+export function bashLivePreview(output: string, elapsedMs: number): string {
+	const tail = output
+		.split("\n")
+		.filter((line) => line.trim())
+		.slice(-3)
+		.map((line) => singleLine(line));
+	const summary = elapsedMs >= 2_000 ? bashProgressSummary(output, elapsedMs) : "Working…";
+	return [summary, ...tail.map((line) => `    ${line}`)].join("\n");
+}
+
 /** Register compact render-only overrides for Pi-owned local built-in tools. */
 export function registerClaudeToolRenderers(pi: ExtensionAPI, cwd: string): void {
 	const piOwnedTools = new Set(
@@ -286,7 +296,7 @@ export function registerClaudeToolRenderers(pi: ExtensionAPI, cwd: string): void
 					theme,
 					context,
 					(output) => lineSummary("Returned", output),
-					(output) => bashProgressSummary(output, startedAt === undefined ? 0 : Date.now() - startedAt),
+					(output) => bashLivePreview(output, startedAt === undefined ? 0 : Date.now() - startedAt),
 				);
 			},
 		});

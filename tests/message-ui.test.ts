@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
-import type { ExtensionAPI, Theme } from "@earendil-works/pi-coding-agent";
+import type { ExtensionAPI, ExtensionContext, Theme } from "@earendil-works/pi-coding-agent";
 import {
 	addAssistantResponseMarker,
+	bashLivePreview,
 	bashProgressSummary,
 	editSummary,
 	fileHyperlink,
@@ -34,6 +35,16 @@ describe("Claude tool details", () => {
 		);
 	});
 
+	it("shows the latest three Bash lines, bounds long lines and strips terminal controls", () => {
+		const preview = bashLivePreview("old\none\ntwo\n\x1b[31mthree\n", 3_500);
+		assert.match(preview, /^Running… \(3s · 4 lines\)/);
+		assert.doesNotMatch(preview, /old/);
+		assert.ok(!preview.includes("\x1b"));
+		assert.match(preview, /one\n {4}two\n/);
+		assert.equal(bashLivePreview("x".repeat(1_000), 0).split("\n")[1]!.length, 124);
+		assert.equal(bashLivePreview("", 0), "Working…");
+	});
+
 	it("formats semantic edit, write, and bash summaries", () => {
 		assert.equal(editSummary({ patch: "--- a/x\n+++ b/x\n-old\n+new\n+extra" }), "Added 2 lines, removed 1 line");
 		assert.equal(writeSummary("one\ntwo\n"), "Wrote 2 lines");
@@ -42,6 +53,47 @@ describe("Claude tool details", () => {
 });
 
 describe("compact built-in tool renderers", () => {
+	it("delegates real Bash execution and renders streaming tail updates without changing output", async () => {
+		let bash: Record<string, any> | undefined;
+		registerClaudeToolRenderers(
+			{
+				getAllTools: () => [{ name: "bash", sourceInfo: { source: "builtin" } }],
+				registerTool: (tool: Record<string, any>) => {
+					bash = tool;
+				},
+			} as unknown as ExtensionAPI,
+			process.cwd(),
+		);
+		const theme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+		const updates: string[] = [];
+		const result = await bash!.execute(
+			"stream-test",
+			{
+				command: `node -e 'console.log("old\\none\\ntwo"); setTimeout(() => console.log("three"), 100)'`,
+				timeout: 5,
+			},
+			undefined,
+			(partial: any) => {
+				updates.push(
+					bash!
+						.renderResult(partial, { expanded: false, isPartial: true }, theme, {
+							toolCallId: "stream-test",
+							isError: false,
+						})
+						.render(80)
+						.join("\n"),
+				);
+			},
+			{
+				sessionManager: { getSessionId: () => "stream-test", getSessionFile: () => undefined },
+			} as unknown as ExtensionContext,
+		);
+		assert.ok(updates.length > 0);
+		assert.match(updates.at(-1)!, /three/);
+		assert.ok(updates.at(-1)!.split("\n").length <= 4);
+		assert.match(result.content[0].text, /^old\none\ntwo\nthree/);
+	});
+
 	it("overrides only tools still owned by Pi", () => {
 		const registered: Array<Record<string, any>> = [];
 		const api = {

@@ -1,7 +1,12 @@
 import { basename } from "node:path";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 import { Text } from "@earendil-works/pi-tui";
-import { loadReducedMotion, saveReducedMotion } from "./claude-config.ts";
+import {
+	type ClaudeCodeTuiConfig,
+	loadClaudeCodeTuiConfig,
+	saveReducedMotion,
+	watchClaudeCodeTuiConfig,
+} from "./claude-config.ts";
 import { showClaudeContext } from "./claude-context.ts";
 import { applyClaudeEditor, disposeClaudeEditor, setClaudeEditorLoading } from "./claude-editor.ts";
 import { applyClaudeFooter } from "./claude-footer.ts";
@@ -15,7 +20,7 @@ import {
 import { ClaudeRunTelemetry, type RunMetricsEntry } from "./claude-run-telemetry.ts";
 import {
 	DEFAULT_STATUS_LINE_ITEMS,
-	loadStatusLineItems,
+	normalizeStatusLineItems,
 	type StatusLineItemId,
 	saveStatusLineItems,
 	showStatusLineSetup,
@@ -28,11 +33,15 @@ import {
 } from "./render-utils.ts";
 
 let activeHeader: PiStartupHeader | undefined;
+let disposeFooter: (() => void) | undefined;
 let previousTheme: ExtensionContext["ui"]["theme"] | undefined;
 let startupTimer: NodeJS.Timeout | undefined;
 let sessionGeneration = 0;
 let statusLineItems: StatusLineItemId[] = [...DEFAULT_STATUS_LINE_ITEMS];
 let reducedMotion = false;
+let themeName: string | false = "claude-code-dark";
+let footerRows = 2;
+let githubEnabled = false;
 let paintUserPromptMarker = (text: string): string => text;
 
 function disposeHeader(): void {
@@ -55,18 +64,26 @@ function applyClaudeLook(pi: ExtensionAPI, ctx: ExtensionContext): void {
 	if (ctx.mode !== "tui") return;
 
 	previousTheme ??= ctx.ui.theme;
-	ctx.ui.setTheme("claude-code-dark");
+	if (themeName !== false) {
+		const result = ctx.ui.setTheme(themeName);
+		if (!result.success) ctx.ui.notify(`Could not apply Claude TUI theme: ${result.error}`, "error");
+	}
 	paintUserPromptMarker = (text) => ctx.ui.theme.fg("dim", text);
 	ctx.ui.setTitle(formatClaudeTerminalTitle(ctx.sessionManager.getSessionName() || basename(ctx.cwd) || "Pi", false));
 	ctx.ui.setHeader((tui) => {
 		disposeHeader();
-		activeHeader = new PiStartupHeader(pi, ctx, tui);
+		activeHeader = new PiStartupHeader(pi, ctx, tui, reducedMotion);
 		return activeHeader;
 	});
-	applyClaudeFooter(pi, ctx, statusLineItems);
+	refreshFooter(pi, ctx);
 	applyWorkingIndicator(ctx);
 	ctx.ui.setHiddenThinkingLabel("∴ Thinking…");
 	applyClaudeEditor(pi, ctx);
+}
+
+function refreshFooter(pi: ExtensionAPI, ctx: ExtensionContext): void {
+	disposeFooter?.();
+	disposeFooter = applyClaudeFooter(pi, ctx, statusLineItems, footerRows, githubEnabled);
 }
 
 function cancelStartupTimer(): void {
@@ -92,6 +109,26 @@ function restorePreviousTheme(ctx: ExtensionContext): void {
 
 export default function (pi: ExtensionAPI) {
 	const telemetry = new ClaudeRunTelemetry();
+	let stopConfigWatcher: (() => void) | undefined;
+
+	function applyConfig(config: ClaudeCodeTuiConfig, ctx: ExtensionContext, live: boolean): void {
+		const nextTheme = config.theme === false ? false : ((config.theme as string | undefined) ?? "claude-code-dark");
+		const themeChanged = nextTheme !== themeName;
+		themeName = nextTheme;
+		statusLineItems = normalizeStatusLineItems(config.statusLine);
+		footerRows = (config.footerRows as number | undefined) ?? 2;
+		githubEnabled = (config.github as boolean | undefined) ?? false;
+		reducedMotion = (config.reducedMotion as boolean | undefined) ?? false;
+		telemetry.setReducedMotion(reducedMotion);
+		if (!live || ctx.mode !== "tui") return;
+		if (themeChanged && themeName !== false) {
+			const result = ctx.ui.setTheme(themeName);
+			if (!result.success) ctx.ui.notify(`Could not apply Claude TUI theme: ${result.error}`, "error");
+		}
+		activeHeader?.setReducedMotion(reducedMotion);
+		applyWorkingIndicator(ctx);
+		refreshFooter(pi, ctx);
+	}
 
 	pi.registerMarkdownTransformer((markdown, { messageType, isStreaming }) => {
 		if (messageType === "user") return addUserPromptMarker(markdown, paintUserPromptMarker("❯"));
@@ -110,20 +147,24 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("session_start", async (_event, ctx) => {
+		const generation = ++sessionGeneration;
 		if (ctx.mode === "tui") registerClaudeToolRenderers(pi, ctx.cwd);
+		stopConfigWatcher?.();
 		try {
-			statusLineItems = await loadStatusLineItems();
+			const config = await loadClaudeCodeTuiConfig();
+			if (generation !== sessionGeneration) return;
+			applyConfig(config, ctx, false);
 		} catch (error) {
-			statusLineItems = [...DEFAULT_STATUS_LINE_ITEMS];
-			ctx.ui.notify(`Could not load status line config: ${(error as Error).message}`, "warning");
+			if (generation !== sessionGeneration) return;
+			applyConfig({}, ctx, false);
+			ctx.ui.notify(`Could not load Claude TUI config: ${(error as Error).message}`, "warning");
 		}
-		try {
-			reducedMotion = await loadReducedMotion();
-		} catch (error) {
-			reducedMotion = false;
-			ctx.ui.notify(`Could not load motion config: ${(error as Error).message}`, "warning");
+		if (ctx.mode === "tui") {
+			stopConfigWatcher = watchClaudeCodeTuiConfig(
+				(config) => applyConfig(config, ctx, true),
+				(error) => ctx.ui.notify(`Claude TUI config unchanged: ${error.message}`, "error"),
+			);
 		}
-		telemetry.setReducedMotion(reducedMotion);
 		scheduleClaudeLook(pi, ctx);
 	});
 
@@ -176,9 +217,13 @@ export default function (pi: ExtensionAPI) {
 
 	pi.on("session_shutdown", (_event, ctx) => {
 		sessionGeneration++;
+		stopConfigWatcher?.();
+		stopConfigWatcher = undefined;
 		cancelStartupTimer();
 		telemetry.stop(ctx);
 		disposeClaudeEditor();
+		disposeFooter?.();
+		disposeFooter = undefined;
 		disposeHeader();
 		restorePreviousTheme(ctx);
 	});
@@ -202,15 +247,17 @@ export default function (pi: ExtensionAPI) {
 				ctx.ui.notify("Usage: /reduced-motion [on|off]", "error");
 				return;
 			}
-			reducedMotion = value === "on";
+			const next = value === "on";
 			try {
-				await saveReducedMotion(reducedMotion);
+				await saveReducedMotion(next);
 			} catch (error) {
 				ctx.ui.notify(`Could not save motion config: ${(error as Error).message}`, "error");
 				return;
 			}
+			reducedMotion = next;
 			telemetry.setReducedMotion(reducedMotion);
-			applyWorkingIndicator(ctx);
+			activeHeader?.setReducedMotion(reducedMotion);
+			if (ctx.mode === "tui") applyWorkingIndicator(ctx);
 			ctx.ui.notify(`Reduced motion ${reducedMotion ? "enabled" : "disabled"}`, "info");
 		},
 	});
@@ -238,7 +285,7 @@ export default function (pi: ExtensionAPI) {
 				return;
 			}
 			statusLineItems = selected;
-			applyClaudeFooter(pi, ctx, statusLineItems);
+			refreshFooter(pi, ctx);
 			ctx.ui.notify(selected.length > 0 ? "Status line updated" : "Status line hidden", "info");
 		},
 	});

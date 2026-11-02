@@ -29,39 +29,54 @@ export async function showClaudeContext(ctx: ExtensionCommandContext): Promise<v
 		ctx.ui.notify("/context requires TUI mode", "error");
 		return;
 	}
-	const usage = ctx.getContextUsage();
-	await ctx.ui.custom<void>((_tui, theme, _keybindings, done) => ({
-		render(width: number): string[] {
-			const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
-			const tokens = usage?.tokens ?? 0;
-			const measuredRatio = contextWindow > 0 ? tokens / contextWindow : 0;
-			const ratio = usage?.percent === null || usage?.percent === undefined ? measuredRatio : usage.percent / 100;
-			const percent =
-				usage?.percent === null || usage?.percent === undefined
-					? contextWindow > 0
-						? `${Math.round(measuredRatio * 100)}%`
-						: "unknown"
-					: `${Math.round(usage.percent)}%`;
-			const free = Math.max(0, contextWindow - tokens);
-			const barWidth = Math.max(1, Math.min(40, width - 4));
-			const lines = [
-				theme.fg("accent", theme.bold("Context Usage")),
-				"",
-				`  ${paintContextBar(ratio, barWidth, theme)}`,
-				`  ${theme.fg("text", `${percent} used`)}${
-					contextWindow > 0
-						? theme.fg("dim", ` · ${formatContextTokens(tokens)} / ${formatContextTokens(contextWindow)} tokens`)
-						: ""
-				}`,
-				...(contextWindow > 0 ? [`  ${theme.fg("dim", `${formatContextTokens(free)} tokens free`)}`] : []),
-				"",
-				theme.fg("dim", "Esc or Enter to close"),
-			];
-			return lines.map((line) => truncateToWidth(line, Math.max(0, width), "…"));
-		},
-		invalidate() {},
-		handleInput(data: string) {
-			if (matchesKey(data, Key.escape) || matchesKey(data, Key.enter)) done();
-		},
-	}));
+	let timer: NodeJS.Timeout | undefined;
+	try {
+		await ctx.ui.custom<void>((tui, theme, _keybindings, done) => {
+			timer = setInterval(() => tui.requestRender(), 1_000);
+			timer.unref?.();
+			return {
+				render(width: number): string[] {
+					const usage = ctx.getContextUsage();
+					const contextWindow = usage?.contextWindow ?? ctx.model?.contextWindow ?? 0;
+					const tokens = usage?.tokens;
+					const measuredRatio =
+						tokens !== null && tokens !== undefined && contextWindow > 0 ? tokens / contextWindow : 0;
+					const ratio = usage?.percent === null || usage?.percent === undefined ? measuredRatio : usage.percent / 100;
+					const percent =
+						usage?.percent === null || usage?.percent === undefined
+							? tokens !== null && tokens !== undefined && contextWindow > 0
+								? `${Math.round(measuredRatio * 100)}%`
+								: "unknown"
+							: `${Math.round(usage.percent)}%`;
+					const free = tokens !== null && tokens !== undefined ? Math.max(0, contextWindow - tokens) : undefined;
+					const barWidth = Math.max(1, Math.min(40, width - 4));
+					const lines = [
+						theme.fg("accent", theme.bold("Context Usage")),
+						"",
+						`  ${paintContextBar(ratio, barWidth, theme)}`,
+						`  ${theme.fg("text", `${percent} used`)}${
+							contextWindow > 0
+								? theme.fg(
+										"dim",
+										` · ${tokens === null || tokens === undefined ? "?" : formatContextTokens(tokens)} / ${formatContextTokens(contextWindow)} tokens`,
+									)
+								: ""
+						}`,
+						...(contextWindow > 0 && free !== undefined
+							? [`  ${theme.fg("dim", `${formatContextTokens(free)} tokens free`)}`]
+							: []),
+						"",
+						theme.fg("dim", "Esc or Enter to close"),
+					];
+					return lines.map((line) => truncateToWidth(line, Math.max(0, width), "…"));
+				},
+				invalidate() {},
+				handleInput(data: string) {
+					if (matchesKey(data, Key.escape) || matchesKey(data, Key.enter)) done();
+				},
+			};
+		});
+	} finally {
+		clearInterval(timer);
+	}
 }

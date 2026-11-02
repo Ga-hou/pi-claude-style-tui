@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
 import { describe, it } from "node:test";
 import type { ExtensionCommandContext, ExtensionContext } from "@earendil-works/pi-coding-agent";
+import { visibleWidth } from "@earendil-works/pi-tui";
 import {
 	collectStatusLineUsage,
+	layoutStatusLine,
 	normalizeStatusLineItems,
 	renderStatusLine,
+	StatusLineUsageCache,
 	showStatusLineSetup,
 } from "../extensions/claude-status-line.ts";
 
@@ -126,8 +129,19 @@ describe("Claude status line", () => {
 		assert.ok(rendered.indexOf("R50 CH50.0%") < rendered.indexOf("ctx 91%/100k"));
 		assert.match(rendered, /test-model • medium/);
 		assert.match(rendered, /<error>ctx 91%\/100k<\/error>/);
-		assert.match(renderStatusLine(["context"], source(70), theme), /<warning>ctx 70%\/100k<\/warning>/);
-		assert.match(renderStatusLine(["context"], source(90), theme), /<error>ctx 90%\/100k<\/error>/);
+		for (const percent of [0, 50, 70]) {
+			assert.match(
+				renderStatusLine(["context"], source(percent), theme),
+				new RegExp(`<dim>ctx ${percent}%/100k</dim>`),
+			);
+		}
+		for (const percent of [71, 90]) {
+			assert.match(
+				renderStatusLine(["context"], source(percent), theme),
+				new RegExp(`<warning>ctx ${percent}%/100k</warning>`),
+			);
+		}
+		assert.match(renderStatusLine(["context"], source(100), theme), /<error>ctx 100%\/100k<\/error>/);
 		assert.match(renderStatusLine(["context"], source(null), theme), /<dim>ctx \?\/100k<\/dim>/);
 		assert.match(
 			renderStatusLine(
@@ -146,6 +160,73 @@ describe("Claude status line", () => {
 			),
 			/Status work.*session-123.*session\.jsonl.*ctx 75% left.*100k window.*↑50.*↓10.*v/,
 		);
+	});
+
+	it("caches 10k entries across repaints and counts only new entries across branches", () => {
+		const entries = Array.from({ length: 10_000 }, (_, i) => ({
+			id: String(i),
+			parentId: i ? String(i - 1) : null,
+			type: "message",
+			message: { role: "assistant", usage: { output: 1 } },
+		}));
+		let leaf = entries.at(-1)!.id;
+		let session = "first";
+		let scans = 0;
+		let lookups = 0;
+		const manager = {
+			getSessionId: () => session,
+			getLeafId: () => leaf,
+			getEntries: () => {
+				scans++;
+				return entries;
+			},
+			getEntry: (id: string) => {
+				lookups++;
+				return entries[Number(id)];
+			},
+		} as unknown as ExtensionContext["sessionManager"];
+		const cache = new StatusLineUsageCache();
+		for (let i = 0; i < 1_000; i++) assert.equal(cache.get(manager).output, 10_000);
+		assert.equal(scans, 1);
+		assert.equal(lookups, 0);
+		entries.push({ ...entries[0]!, id: "10000", parentId: leaf });
+		leaf = "10000";
+		assert.equal(cache.get(manager).output, 10_001);
+		assert.equal(lookups, 1);
+		leaf = "5";
+		assert.equal(cache.get(manager).output, 10_001);
+		entries.push({ ...entries[0]!, id: "10001", parentId: leaf });
+		leaf = "10001";
+		assert.equal(cache.get(manager).output, 10_002);
+		assert.equal(scans, 1);
+		session = "second";
+		entries.splice(0);
+		assert.equal(cache.get(manager).output, 0);
+		assert.equal(scans, 2);
+	});
+
+	it("wraps complete fields and prioritizes context, model and cost in narrow terminals", () => {
+		const plainTheme = { fg: (_color: string, text: string) => text, bold: (text: string) => text };
+		const segments = [
+			{ id: "model" as const, text: "model high" },
+			{ id: "context" as const, text: "ctx 71%" },
+			{ id: "directory" as const, text: "~/very/long/workspace/path" },
+			{ id: "cache" as const, text: "R100k CH90%" },
+			{ id: "cost" as const, text: "$0.125" },
+		];
+		assert.deepEqual(layoutStatusLine(segments, 120, plainTheme), [segments.map((s) => s.text).join(" | ")]);
+		const narrow = layoutStatusLine(segments, 24, plainTheme);
+		assert.ok(narrow.length <= 2);
+		assert.match(narrow.join("\n"), /model high.*ctx 71%/);
+		assert.match(narrow.join("\n"), /\$0\.125/);
+		assert.ok(narrow.every((line) => visibleWidth(line) <= 24));
+		assert.deepEqual(layoutStatusLine(segments, 0, plainTheme), []);
+		assert.deepEqual(layoutStatusLine([], 24, plainTheme), []);
+		assert.ok(layoutStatusLine(segments, 1, plainTheme).every((line) => visibleWidth(line) <= 1));
+		for (const width of [1, 8, 20, 40, 80]) {
+			const unicode = [{ id: "model" as const, text: "\x1b[31m模型👩‍💻é high\x1b[0m" }, ...segments];
+			assert.ok(layoutStatusLine(unicode, width, plainTheme).every((line) => visibleWidth(line) <= width));
+		}
 	});
 
 	it("reorders enabled items with left/right like Codex", async () => {
